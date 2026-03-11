@@ -1,0 +1,177 @@
+/* Reset & full-screen Cesium container */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#cesiumContainer {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* ─── 3D Compass Widget ──────────────────────────────────────────── */
+#compassWidget {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  pointer-events: none;
+  perspective: 300px;
+}
+
+.compass-ring {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: radial-gradient(
+    circle,
+    rgba(20, 20, 30, 0.85) 0%,
+    rgba(10, 10, 18, 0.92) 100%
+  );
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.5),
+    inset 0 0 8px rgba(255, 255, 255, 0.05);
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.1s ease-out;
+}
+
+.compass-n,
+.compass-e,
+.compass-s,
+.compass-w {
+  position: absolute;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.compass-n {
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #ef4444;
+}
+
+.compass-s {
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.compass-e {
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.compass-w {
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.compass-needle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.needle-north {
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-bottom: 20px solid #ef4444;
+}
+
+.needle-south {
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 20px solid rgba(255, 255, 255, 0.45);
+  margin-top: 4px;
+}
+
+/* ─── Fallback Warning Modal ─────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-card {
+  background: #1e1e2e;
+  color: #e0e0e0;
+  border-radius: 12px;
+  padding: 2rem 2.5rem;
+  max-width: 480px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.modal-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.4rem;
+  color: #fbbf24;
+}
+
+.modal-card p {
+  margin: 0 0 1.5rem;
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+.modal-card code {
+  background: #2a2a3c;
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #93c5fd;
+}
+
+.modal-card button {
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1.6rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.modal-card button:hover {
+  background: #2563eb;
+}
+
+/* ─── Cesium InfoBox (entity selection panel) ────────────────────── */
+.cesium-infoBox {
+  right: auto !important;
+  left: 50% !important;
+  transform: translate(-50%, 0) translate(100%, 0) !important;
+  border-radius: 7px !important;
+  border-right: 1px solid #444 !important;
+  max-width: 400px !important;
+}
+
+.cesium-infoBox-visible {
+  transform: translate(-50%, 0) !important;
+}
