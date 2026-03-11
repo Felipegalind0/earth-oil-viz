@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <link rel="stylesheet" href="/earth-oil-viz/cesium/Widgets/widgets.css">
+    <script src="/earth-oil-viz/cesium/Cesium.js"></script>
+
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/earth-oil-viz/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Earth Oil Viz</title>
+    <script type="module" crossorigin src="/earth-oil-viz/assets/index-DcmFucwM.js"></script>
+    <link rel="stylesheet" crossorigin href="/earth-oil-viz/assets/index-C6gk-YiR.css">
+  </head>
+  <body>
+    <div id="cesiumContainer"></div>
+
+    <!-- 3D Compass Widget -->
+    <div id="compassWidget">
+      <div class="compass-ring">
+        <span class="compass-n">N</span>
+        <span class="compass-e">E</span>
+        <span class="compass-s">S</span>
+        <span class="compass-w">W</span>
+        <div class="compass-needle">
+          <div class="needle-north"></div>
+          <div class="needle-south"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fallback warning modal (hidden by default, shown via JS) -->
+    <div id="fallbackModal" class="modal-overlay" style="display: none">
+      <div class="modal-card">
+        <h2>Fallback Mode</h2>
+        <p>
+          Viewing in <strong>Fallback Mode</strong> (OpenStreetMap).<br />
+          To view the Google 3D Earth, append
+          <code>?key=YOUR_GOOGLE_API_KEY</code> to the URL.
+        </p>
+        <button id="dismissModal">Dismiss</button>
+      </div>
+    </div>
+
+  </body>
+</html>
