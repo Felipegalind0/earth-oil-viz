@@ -202,6 +202,14 @@ body {
   padding-top: 6px;
 }
 
+.data-panel-scenario {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 6px;
+}
+
 .data-panel-source-heading {
   color: rgba(255, 255, 255, 0.35);
   font-size: 9px;
@@ -212,6 +220,12 @@ body {
 
 .data-panel-source span:last-child {
   color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.data-panel-scenario span:last-child {
+  color: rgba(255, 255, 255, 0.62);
   font-size: 11px;
   line-height: 1.4;
 }

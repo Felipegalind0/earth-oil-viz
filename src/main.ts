@@ -6,6 +6,8 @@ import "cesium/Build/Cesium/Widgets/widgets.css";
 import { TRADE_FLOWS, TRADE_YEAR } from "./data/tradeFlows";
 import type { TradeFlow } from "./data/tradeFlows";
 import { REGIONS } from "./data/regions";
+import { ROUTE_SCENARIOS } from "./data/seaRoutes";
+import type { RouteScenarioId } from "./data/seaRoutes";
 import { createCountrySpheres } from "./visualization/regionSpheres";
 import { createSeaLanes } from "./visualization/seaLanes";
 import { startFlowAnimation } from "./visualization/flowAnimation";
@@ -117,6 +119,20 @@ let currentLaneEntities: Cesium.Entity[] = [];
 let currentAnimHandle: { particles: Cesium.Entity[]; cleanup: () => void } | null = null;
 let currentCullSet: CullableSet | null = null;
 let cullTickListener: Cesium.Event.RemoveCallback | null = null;
+let currentDatasetId = "all";
+let currentScenarioId: RouteScenarioId = "baseline";
+
+function updateScenarioDescription(): void {
+  const scenario = ROUTE_SCENARIOS.find((item) => item.id === currentScenarioId);
+  const description = document.getElementById("routeScenarioDescription");
+  if (scenario && description) {
+    description.textContent = scenario.description;
+  }
+}
+
+function rebuildCurrentVisualization(): void {
+  buildVisualization(filterFlows(currentDatasetId));
+}
 
 function buildVisualization(flows: TradeFlow[]) {
   // Tear down previous lanes & particles (spheres stay — they don't change)
@@ -124,9 +140,9 @@ function buildVisualization(flows: TradeFlow[]) {
   for (const e of currentLaneEntities) viewer.entities.remove(e);
 
   // Sea lanes
-  const lanes = createSeaLanes(viewer, flows);
+  const lanes = createSeaLanes(viewer, flows, currentScenarioId);
   currentLaneEntities = lanes.map((l) => l.entity);
-  console.log(`Rendered ${lanes.length} sea lanes`);
+  console.log(`Rendered ${lanes.length} trade lanes for scenario "${currentScenarioId}"`);
 
   // Flow animation
   const maxFlowValue = Math.max(...flows.map((f) => f.value), 1);
@@ -145,14 +161,24 @@ const sphereEntities = createCountrySpheres(viewer);
 
 // ─── Initial Build ──────────────────────────────────────────────────
 console.log(`Building visualization from ${TRADE_FLOWS.length} trade flows (${TRADE_YEAR})`);
-buildVisualization(TRADE_FLOWS);
+updateScenarioDescription();
+rebuildCurrentVisualization();
 
 // ─── Dataset Dropdown Wiring ────────────────────────────────────────
 const datasetSelect = document.getElementById("datasetSelect") as HTMLSelectElement | null;
 datasetSelect?.addEventListener("change", () => {
-  const flows = filterFlows(datasetSelect.value);
-  console.log(`Switching to dataset "${datasetSelect.value}" — ${flows.length} flows`);
+  currentDatasetId = datasetSelect.value;
+  const flows = filterFlows(currentDatasetId);
+  console.log(`Switching to dataset "${currentDatasetId}" — ${flows.length} flows`);
   buildVisualization(flows);
+});
+
+const routeScenarioSelect = document.getElementById("routeScenarioSelect") as HTMLSelectElement | null;
+routeScenarioSelect?.addEventListener("change", () => {
+  currentScenarioId = routeScenarioSelect.value as RouteScenarioId;
+  updateScenarioDescription();
+  console.log(`Switching routing scenario to "${currentScenarioId}"`);
+  rebuildCurrentVisualization();
 });
 
 // ─── Multi-touch / Trackpad Gesture Support ─────────────────────────

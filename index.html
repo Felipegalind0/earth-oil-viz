@@ -28,6 +28,17 @@
         <option value="europe">Europe Exports</option>
         <option value="russia_cis">Russia &amp; CIS Exports</option>
       </select>
+      <label class="data-panel-label" for="routeScenarioSelect">Routing Scenario</label>
+      <select id="routeScenarioSelect" class="data-panel-select">
+        <option value="baseline">Baseline</option>
+        <option value="suez_closed">Suez Closed</option>
+        <option value="panama_constrained">Panama Constrained</option>
+        <option value="hormuz_high_risk">Hormuz High Risk</option>
+      </select>
+      <div class="data-panel-scenario">
+        <span class="data-panel-source-heading">Scenario Effect</span>
+        <span id="routeScenarioDescription">Normal corridor costs with all major chokepoints open.</span>
+      </div>
       <div class="data-panel-source">
         <span class="data-panel-source-heading">Source</span>
         <span id="dataSourceText">Harvard Atlas of Economic Complexity / UN Comtrade — SITC 3330 crude petroleum (2023)</span>

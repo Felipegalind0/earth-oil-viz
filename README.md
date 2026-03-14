@@ -41,7 +41,7 @@ src/
 │   ├── tradeFlows.ts                # AUTO-GENERATED — 468 bilateral crude oil flows
 │   ├── countries.ts                 # 96 countries with oil port/terminal coordinates
 │   ├── regions.ts                   # 10 regions for color grouping
-│   └── seaRoutes.ts                 # Dijkstra pathfinding on ~45 maritime waypoints
+│   └── seaRoutes.ts                 # Scenario-aware corridor routing + pipeline overrides
 └── visualization/
     ├── regionSpheres.ts             # Country spheres sized by trade volume
     ├── seaLanes.ts                  # Polyline sea routes with width ∝ flow value
@@ -50,7 +50,9 @@ src/
 
 ### Key Technical Details
 
-- **Sea routing**: Dijkstra's shortest path on a graph of ~45 waypoints covering major chokepoints (Suez, Malacca, Panama, Hormuz, Cape of Good Hope, etc.). Ports connect to the 3 nearest waypoints. Routes are Catmull-Rom spline-interpolated for smooth curves.
+- **Trade routing**: Dijkstra on a logistics-aware maritime corridor graph, with edge costs based on corridor type, chokepoint penalties, and canal delays. A small explicit pipeline layer handles obvious overland cases such as Canada→United States and Benelux refinery corridors.
+- **Corridor geometry**: Key chokepoints and coastal approaches now use authored segment geometry for Hormuz, Suez, Gibraltar, the English Channel, Danish Straits, Bosphorus, Malacca, Panama, the Cape route, and several Atlantic/African coastal legs.
+- **Scenario controls**: The UI can rebuild routes for Baseline, Suez Closed, Panama Constrained, and Hormuz High Risk cases. These scenarios change graph costs or closures and trigger actual rerouting.
 - **Hemisphere culling**: Entities on the far side of the globe are hidden each frame via a dot-product test (camera normal · entity normal). Zero-allocation per frame using scratch vectors.
 - **Flow animation**: 5 particles per lane, phase-offset, using `CallbackProperty` for per-frame position interpolation. Speed and size scale with flow value.
 - **Country spheres**: Sized by `log1p(totalTradeVolume)`, colored by region with warm/cool tinting based on net exporter/importer status.
@@ -83,6 +85,15 @@ The UI dropdown lets you filter flows:
 | Africa Exports | Flows from NGA, AGO, LBY, DZA, EGY, GNQ, GAB, etc. |
 | Europe Exports | Flows from NOR, GBR, NLD, RUS excluded (has own category) |
 | Russia & CIS | Flows from RUS, KAZ, AZE, TKM, UZB |
+
+### Routing Scenarios
+
+| Scenario | Effect |
+|----------|--------|
+| Baseline | Normal corridor costs with all major chokepoints open |
+| Suez Closed | Blocks Suez Canal and pushes Europe-Asia traffic toward the Cape when possible |
+| Panama Constrained | Adds large delay to Panama Canal transit, encouraging longer alternatives |
+| Hormuz High Risk | Increases Gulf chokepoint risk cost for Hormuz-linked export routes |
 
 ## Stack
 
