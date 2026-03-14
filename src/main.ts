@@ -132,10 +132,10 @@ if (apiKey) {
     console.error("Failed to load Google 3D Tiles:", error);
   }
 } else {
-  // Fallback: free OpenStreetMap imagery
+  // Fallback: free OpenStreetMap imagery via Cesium's built-in provider
   viewer.imageryLayers.addImageryProvider(
     new Cesium.OpenStreetMapImageryProvider({
-      url: "https://a.tile.openstreetmap.org/",
+      url: "https://tile.openstreetmap.org/",
     })
   );
 
