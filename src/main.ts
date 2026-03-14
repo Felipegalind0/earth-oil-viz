@@ -2,92 +2,18 @@ import "./style.css";
 import * as Cesium from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
-// ─── Types ──────────────────────────────────────────────────────────
-interface OilHub {
-  id: string;
-  name: string;
-  longitude: number;
-  latitude: number;
-  productionVolume: number; // million barrels/day – drives sphere size
-}
+// ─── Data & Visualization Modules ───────────────────────────────────
+import { fetchComtradeData } from "./data/comtradeApi";
+import type { TradeData } from "./data/comtradeApi";
+import { getFallbackData } from "./data/fallbackData";
+import { createRegionSpheres } from "./visualization/regionSpheres";
+import { createSeaLanes } from "./visualization/seaLanes";
+import { startFlowAnimation } from "./visualization/flowAnimation";
 
-interface OilPipeline {
-  from: string; // hub id
-  to: string; // hub id
-}
-
-// ─── Dummy Data ─────────────────────────────────────────────────────
-const hubs: OilHub[] = [
-  {
-    id: "texas",
-    name: "Texas Refinery",
-    longitude: -95.36,
-    latitude: 29.76,
-    productionVolume: 5.5,
-  },
-  {
-    id: "saudi",
-    name: "Saudi Hub",
-    longitude: 50.1,
-    latitude: 26.35,
-    productionVolume: 12.0,
-  },
-  {
-    id: "northsea",
-    name: "North Sea Platform",
-    longitude: 2.0,
-    latitude: 57.5,
-    productionVolume: 3.2,
-  },
-  {
-    id: "nigeria",
-    name: "Lagos Terminal",
-    longitude: 3.39,
-    latitude: 6.45,
-    productionVolume: 2.0,
-  },
-  {
-    id: "brazil",
-    name: "Rio de Janeiro Hub",
-    longitude: -43.17,
-    latitude: -22.91,
-    productionVolume: 3.8,
-  },
-  {
-    id: "singapore",
-    name: "Singapore Depot",
-    longitude: 103.85,
-    latitude: 1.29,
-    productionVolume: 4.5,
-  },
-];
-
-const pipelines: OilPipeline[] = [
-  { from: "saudi", to: "texas" },
-  { from: "saudi", to: "singapore" },
-  { from: "northsea", to: "texas" },
-  { from: "nigeria", to: "brazil" },
-  { from: "nigeria", to: "northsea" },
-  { from: "brazil", to: "texas" },
-  { from: "singapore", to: "saudi" },
-  { from: "texas", to: "northsea" },
-];
-
-// ─── Helpers ────────────────────────────────────────────────────────
-function hubById(id: string): OilHub {
-  const hub = hubs.find((h) => h.id === id);
-  if (!hub) throw new Error(`Hub not found: ${id}`);
-  return hub;
-}
-
-/** Map production volume to sphere radius in metres */
-function sphereRadius(volume: number): number {
-  return 30_000 + volume * 12_000; // min 30 km, scales with volume
-}
-
-// ─── Read API key from URL params ───────────────────────────────────
+// ─── Read API keys from URL params ──────────────────────────────────
 const params = new URLSearchParams(window.location.search);
 const apiKey = params.get("key");
+const comtradeKey = params.get("comtrade_key");
 
 // ─── Viewer Initialisation ──────────────────────────────────────────
 const viewer = new Cesium.Viewer("cesiumContainer", {
@@ -149,54 +75,51 @@ if (apiKey) {
   }
 }
 
-// ─── Render Oil Hubs (Nodes) ────────────────────────────────────────
-for (const hub of hubs) {
-  const radius = sphereRadius(hub.productionVolume);
-
-  viewer.entities.add({
-    name: hub.name,
-    position: Cesium.Cartesian3.fromDegrees(hub.longitude, hub.latitude, radius),
-    ellipsoid: {
-      radii: new Cesium.Cartesian3(radius, radius, radius),
-      material: Cesium.Color.RED.withAlpha(0.5),
-    },
-    label: {
-      text: hub.name,
-      font: "14px sans-serif",
-      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-      outlineWidth: 2,
-      verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-      pixelOffset: new Cesium.Cartesian2(0, -20),
-      fillColor: Cesium.Color.WHITE,
-      outlineColor: Cesium.Color.BLACK,
-      disableDepthTestDistance: Number.POSITIVE_INFINITY,
-    },
-  });
+// ─── Load Trade Data & Build Visualization ──────────────────────────
+async function loadTradeData(): Promise<TradeData> {
+  if (comtradeKey) {
+    try {
+      const data = await fetchComtradeData(comtradeKey);
+      console.log(
+        `Loaded Comtrade data: ${data.flows.length} flows for year ${data.year}`,
+      );
+      return data;
+    } catch (err) {
+      console.warn("Comtrade API failed, using fallback data:", err);
+    }
+  }
+  console.log("Using fallback trade data (2023 estimates)");
+  return getFallbackData();
 }
 
-// ─── Render Oil Pipelines (Edges) ───────────────────────────────────
-for (const pipe of pipelines) {
-  const from = hubById(pipe.from);
-  const to = hubById(pipe.to);
-  const fromRadius = sphereRadius(from.productionVolume);
-  const toRadius = sphereRadius(to.productionVolume);
+// Show loading overlay
+const loadingOverlay = document.getElementById("loadingOverlay");
+if (loadingOverlay) loadingOverlay.style.display = "flex";
 
-  viewer.entities.add({
-    name: `${from.name} → ${to.name}`,
-    polyline: {
-      positions: Cesium.Cartesian3.fromDegreesArrayHeights([
-        from.longitude,
-        from.latitude,
-        fromRadius,
-        to.longitude,
-        to.latitude,
-        toRadius,
-      ]),
-      width: 3,
-      material: Cesium.Color.YELLOW.withAlpha(0.5),
-      arcType: Cesium.ArcType.GEODESIC,
-    },
-  });
+const tradeData = await loadTradeData();
+
+// Hide loading overlay
+if (loadingOverlay) loadingOverlay.style.display = "none";
+
+// ─── Render Region Spheres ──────────────────────────────────────────
+createRegionSpheres(viewer, tradeData);
+
+// ─── Render Sea Lanes ───────────────────────────────────────────────
+// Only show flows that have a matching sea route
+const lanes = createSeaLanes(viewer, tradeData.flows);
+console.log(`Rendered ${lanes.length} sea lanes`);
+
+// ─── Start Flow Animation ───────────────────────────────────────────
+const maxFlowValue = Math.max(...tradeData.flows.map((f) => f.value), 1);
+startFlowAnimation(viewer, lanes, maxFlowValue);
+
+// ─── Data Source Label ──────────────────────────────────────────────
+const sourceLabel = document.getElementById("dataSourceLabel");
+if (sourceLabel) {
+  sourceLabel.textContent =
+    tradeData.source === "comtrade"
+      ? `UN Comtrade ${tradeData.year}`
+      : `Demo data (${tradeData.year} est.)`;
 }
 
 // ─── Multi-touch / Trackpad Gesture Support ─────────────────────────

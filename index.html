@@ -9,6 +9,15 @@
   <body>
     <div id="cesiumContainer"></div>
 
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none">
+      <div class="loading-spinner"></div>
+      <p class="loading-text">Loading oil trade data…</p>
+    </div>
+
+    <!-- Data source label -->
+    <div id="dataSourceLabel" class="data-source-label"></div>
+
     <!-- 3D Compass Widget -->
     <div id="compassWidget">
       <div class="compass-ring">

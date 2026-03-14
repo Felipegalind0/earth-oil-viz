@@ -8,11 +8,20 @@
     <link rel="icon" type="image/svg+xml" href="/earth-oil-viz/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Earth Oil Viz</title>
-    <script type="module" crossorigin src="/earth-oil-viz/assets/index-DNt4TpLQ.js"></script>
-    <link rel="stylesheet" crossorigin href="/earth-oil-viz/assets/index-C6gk-YiR.css">
+    <script type="module" crossorigin src="/earth-oil-viz/assets/index-BmLrCKgE.js"></script>
+    <link rel="stylesheet" crossorigin href="/earth-oil-viz/assets/index-AGAIyE3l.css">
   </head>
   <body>
     <div id="cesiumContainer"></div>
+
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none">
+      <div class="loading-spinner"></div>
+      <p class="loading-text">Loading oil trade data…</p>
+    </div>
+
+    <!-- Data source label -->
+    <div id="dataSourceLabel" class="data-source-label"></div>
 
     <!-- 3D Compass Widget -->
     <div id="compassWidget">
