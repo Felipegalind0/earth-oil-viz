@@ -3,17 +3,15 @@ import * as Cesium from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
 // ─── Data & Visualization Modules ───────────────────────────────────
-import { fetchComtradeData } from "./data/comtradeApi";
-import type { TradeData } from "./data/comtradeApi";
-import { getFallbackData } from "./data/fallbackData";
-import { createRegionSpheres } from "./visualization/regionSpheres";
+import { TRADE_FLOWS, TRADE_YEAR } from "./data/tradeFlows";
+import { createCountrySpheres } from "./visualization/regionSpheres";
 import { createSeaLanes } from "./visualization/seaLanes";
 import { startFlowAnimation } from "./visualization/flowAnimation";
+import { buildCullableSet, updateCulling } from "./culling";
 
-// ─── Read API keys from URL params ──────────────────────────────────
+// ─── Read API key from URL params ───────────────────────────────────
 const params = new URLSearchParams(window.location.search);
 const apiKey = params.get("key");
-const comtradeKey = params.get("comtrade_key");
 
 // ─── Viewer Initialisation ──────────────────────────────────────────
 const viewer = new Cesium.Viewer("cesiumContainer", {
@@ -75,51 +73,28 @@ if (apiKey) {
   }
 }
 
-// ─── Load Trade Data & Build Visualization ──────────────────────────
-async function loadTradeData(): Promise<TradeData> {
-  if (comtradeKey) {
-    try {
-      const data = await fetchComtradeData(comtradeKey);
-      console.log(
-        `Loaded Comtrade data: ${data.flows.length} flows for year ${data.year}`,
-      );
-      return data;
-    } catch (err) {
-      console.warn("Comtrade API failed, using fallback data:", err);
-    }
-  }
-  console.log("Using fallback trade data (2023 estimates)");
-  return getFallbackData();
-}
+// ─── Build Visualization from Static Data ───────────────────────────
+console.log(`Building visualization from ${TRADE_FLOWS.length} trade flows (${TRADE_YEAR})`);
 
-// Show loading overlay
-const loadingOverlay = document.getElementById("loadingOverlay");
-if (loadingOverlay) loadingOverlay.style.display = "flex";
-
-const tradeData = await loadTradeData();
-
-// Hide loading overlay
-if (loadingOverlay) loadingOverlay.style.display = "none";
-
-// ─── Render Region Spheres ──────────────────────────────────────────
-createRegionSpheres(viewer, tradeData);
+// ─── Render Country Spheres ─────────────────────────────────────────
+const sphereEntities = createCountrySpheres(viewer);
 
 // ─── Render Sea Lanes ───────────────────────────────────────────────
-// Only show flows that have a matching sea route
-const lanes = createSeaLanes(viewer, tradeData.flows);
+const lanes = createSeaLanes(viewer, TRADE_FLOWS);
 console.log(`Rendered ${lanes.length} sea lanes`);
 
 // ─── Start Flow Animation ───────────────────────────────────────────
-const maxFlowValue = Math.max(...tradeData.flows.map((f) => f.value), 1);
-startFlowAnimation(viewer, lanes, maxFlowValue);
+const maxFlowValue = Math.max(...TRADE_FLOWS.map((f) => f.value), 1);
+const animHandle = startFlowAnimation(viewer, lanes, maxFlowValue);
+
+// ─── Hemisphere Culling ─────────────────────────────────────────────
+const cullSet = buildCullableSet(sphereEntities, lanes, animHandle.particles);
+viewer.clock.onTick.addEventListener(() => updateCulling(viewer, cullSet));
 
 // ─── Data Source Label ──────────────────────────────────────────────
 const sourceLabel = document.getElementById("dataSourceLabel");
 if (sourceLabel) {
-  sourceLabel.textContent =
-    tradeData.source === "comtrade"
-      ? `UN Comtrade ${tradeData.year}`
-      : `Demo data (${tradeData.year} est.)`;
+  sourceLabel.textContent = `Crude oil trade ${TRADE_YEAR} (est.)`;
 }
 
 // ─── Multi-touch / Trackpad Gesture Support ─────────────────────────

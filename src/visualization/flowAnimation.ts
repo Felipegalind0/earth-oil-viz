@@ -1,158 +1,117 @@
 // ─── Flow Animation (Particles Along Sea Lanes) ────────────────────
-// Animates small point entities travelling along each rendered sea lane
-// to show the direction and intensity of oil flow.
+// Animates point entities travelling along each sea lane using
+// CallbackProperty for efficient per-frame position updates.
 
 import * as Cesium from "cesium";
-import { getRegion } from "../data/regions";
+import { COUNTRY_TO_REGION, REGIONS } from "../data/regions";
 import type { RenderedLane } from "./seaLanes";
 
-/** Number of particles per lane */
-const PARTICLES_PER_LANE = 6;
-/** Base animation speed (fraction of route per second) */
-const BASE_SPEED = 0.04;
-/** Particle point size range */
-const MIN_POINT_SIZE = 4;
-const MAX_POINT_SIZE = 8;
-/** Altitude offset above the sea lane line */
-const ALT_OFFSET = 25_000;
+/** Particles per lane */
+const PARTICLES_PER_LANE = 5;
+/** Base speed: fraction of route per second */
+const BASE_SPEED = 0.035;
+const MIN_POINT_SIZE = 3;
+const MAX_POINT_SIZE = 7;
+/** Altitude for particles */
+const ALT_OFFSET = 20_000;
 
-interface Particle {
-  entity: Cesium.Entity;
-  /** Current progress along route: 0..1 */
-  phase: number;
+export interface FlowAnimationHandle {
+  /** All particle entities (for culling) */
+  particles: Cesium.Entity[];
+  /** Cleanup function to remove all particles */
+  cleanup: () => void;
 }
-
-interface LaneAnimation {
-  lane: RenderedLane;
-  particles: Particle[];
-  speed: number; // fraction of route per second
-  /** Precomputed Cartesian3 positions along the route */
-  positions: Cesium.Cartesian3[];
-}
-
-let animations: LaneAnimation[] = [];
-let removeTickListener: (() => void) | null = null;
 
 /**
  * Start animating particles along all rendered sea lanes.
- * Call once after createSeaLanes().
+ * Uses CallbackProperty so Cesium updates positions automatically each frame.
+ * Returns a handle with particle entities and a cleanup function.
  */
 export function startFlowAnimation(
   viewer: Cesium.Viewer,
   lanes: RenderedLane[],
   maxFlowValue: number,
-): void {
-  // Clean up previous animation if any
-  stopFlowAnimation(viewer);
+): FlowAnimationHandle {
+  const particleEntities: Cesium.Entity[] = [];
 
-  animations = [];
+  // Region color lookup
+  const regionColorMap = new Map<string, [number, number, number]>();
+  for (const r of REGIONS) regionColorMap.set(r.id, r.color);
+
+  // Base time reference
+  const startTime = performance.now() / 1000;
 
   for (const lane of lanes) {
-    // Precompute Cartesian3 positions from lat/lon points
+    // Precompute Cartesian3 positions from the route points
     const positions = lane.points.map(([lat, lon]) =>
       Cesium.Cartesian3.fromDegrees(lon, lat, ALT_OFFSET),
     );
-
     if (positions.length < 2) continue;
 
-    // Speed scales with flow value (higher volume = faster particles)
+    const segCount = positions.length - 1;
+
+    // Speed and size scale with flow value
     const normalizedValue = lane.flow.value / maxFlowValue;
     const speed = BASE_SPEED * (0.5 + normalizedValue * 1.5);
-
-    // Particle visual size
-    const pointSize =
-      MIN_POINT_SIZE +
+    const pointSize = MIN_POINT_SIZE +
       (MAX_POINT_SIZE - MIN_POINT_SIZE) * Math.sqrt(normalizedValue);
 
-    // Color: brighter version of the source region color
-    const region = getRegion(lane.flow.from);
-    const [r, g, b] = region.color;
+    // Brighter version of source region color
+    const regionId = COUNTRY_TO_REGION.get(lane.flow.from) ?? "africa";
+    const [cr, cg, cb] = regionColorMap.get(regionId) ?? [180, 180, 180];
     const color = new Cesium.Color(
-      Math.min(1, (r / 255) * 1.3 + 0.2),
-      Math.min(1, (g / 255) * 1.3 + 0.2),
-      Math.min(1, (b / 255) * 1.3 + 0.2),
-      0.9,
+      Math.min(1, (cr / 255) * 1.3 + 0.2),
+      Math.min(1, (cg / 255) * 1.3 + 0.2),
+      Math.min(1, (cb / 255) * 1.3 + 0.2),
+      0.85,
     );
 
-    const particles: Particle[] = [];
     for (let i = 0; i < PARTICLES_PER_LANE; i++) {
-      const phase = i / PARTICLES_PER_LANE;
+      const phaseOffset = i / PARTICLES_PER_LANE;
+
+      // Use CallbackProperty for efficient per-frame position update
+      const positionProperty = new Cesium.CallbackProperty(() => {
+        const elapsed = performance.now() / 1000 - startTime;
+        const phase = ((elapsed * speed) + phaseOffset) % 1;
+        const totalT = phase * segCount;
+        const segIndex = Math.min(Math.floor(totalT), segCount - 1);
+        const localT = totalT - segIndex;
+
+        return Cesium.Cartesian3.lerp(
+          positions[segIndex],
+          positions[segIndex + 1],
+          localT,
+          new Cesium.Cartesian3(),
+        );
+      }, false);
 
       const entity = viewer.entities.add({
-        position: positions[0], // will be updated each frame
+        position: positionProperty as unknown as Cesium.PositionProperty,
         point: {
           pixelSize: pointSize,
           color,
-          outlineColor: Cesium.Color.WHITE.withAlpha(0.4),
+          outlineColor: Cesium.Color.WHITE.withAlpha(0.3),
           outlineWidth: 1,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          scaleByDistance: new Cesium.NearFarScalar(1e6, 1.0, 2e7, 0.3),
+          scaleByDistance: new Cesium.NearFarScalar(1e6, 1.0, 2e7, 0.25),
         },
       });
 
-      particles.push({ entity, phase });
+      particleEntities.push(entity);
     }
-
-    animations.push({ lane, particles, speed, positions });
   }
 
-  // Register tick handler for animation
-  const tickHandler = (_clock: Cesium.Clock) => {
-    updateParticles(viewer);
-  };
-  viewer.clock.onTick.addEventListener(tickHandler);
-  removeTickListener = () =>
-    viewer.clock.onTick.removeEventListener(tickHandler);
-
-  // Make sure the clock is running
+  // Ensure clock is running for animation
   viewer.clock.shouldAnimate = true;
-}
 
-/** Stop and clean up all particle animations */
-export function stopFlowAnimation(viewer: Cesium.Viewer): void {
-  if (removeTickListener) {
-    removeTickListener();
-    removeTickListener = null;
-  }
-  for (const anim of animations) {
-    for (const p of anim.particles) {
-      viewer.entities.remove(p.entity);
-    }
-  }
-  animations = [];
-}
-
-// ─── Frame Update ───────────────────────────────────────────────────
-let lastTime = 0;
-
-function updateParticles(_viewer: Cesium.Viewer): void {
-  const now = performance.now() / 1000; // seconds
-  const dt = lastTime === 0 ? 0.016 : Math.min(now - lastTime, 0.1);
-  lastTime = now;
-
-  for (const anim of animations) {
-    const { positions, speed, particles } = anim;
-    const segCount = positions.length - 1;
-
-    for (const particle of particles) {
-      // Advance phase
-      particle.phase += speed * dt;
-      if (particle.phase >= 1) particle.phase -= 1;
-
-      // Map phase to segment + local t
-      const totalT = particle.phase * segCount;
-      const segIndex = Math.min(Math.floor(totalT), segCount - 1);
-      const localT = totalT - segIndex;
-
-      // Lerp between segment endpoints
-      const pos = Cesium.Cartesian3.lerp(
-        positions[segIndex],
-        positions[segIndex + 1],
-        localT,
-        new Cesium.Cartesian3(),
-      );
-
-      particle.entity.position = pos as unknown as Cesium.PositionProperty;
-    }
-  }
+  // Return handle with particles and cleanup
+  return {
+    particles: particleEntities,
+    cleanup: () => {
+      for (const entity of particleEntities) {
+        viewer.entities.remove(entity);
+      }
+      particleEntities.length = 0;
+    },
+  };
 }
