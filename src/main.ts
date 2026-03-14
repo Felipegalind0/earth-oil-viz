@@ -4,10 +4,13 @@ import "cesium/Build/Cesium/Widgets/widgets.css";
 
 // ─── Data & Visualization Modules ───────────────────────────────────
 import { TRADE_FLOWS, TRADE_YEAR } from "./data/tradeFlows";
+import type { TradeFlow } from "./data/tradeFlows";
+import { REGIONS } from "./data/regions";
 import { createCountrySpheres } from "./visualization/regionSpheres";
 import { createSeaLanes } from "./visualization/seaLanes";
 import { startFlowAnimation } from "./visualization/flowAnimation";
 import { buildCullableSet, updateCulling } from "./culling";
+import type { CullableSet } from "./culling";
 
 // ─── Read API key from URL params ───────────────────────────────────
 const params = new URLSearchParams(window.location.search);
@@ -73,29 +76,84 @@ if (apiKey) {
   }
 }
 
-// ─── Build Visualization from Static Data ───────────────────────────
-console.log(`Building visualization from ${TRADE_FLOWS.length} trade flows (${TRADE_YEAR})`);
+// ─── Dataset Filtering ──────────────────────────────────────────────
+function filterFlows(datasetId: string): TradeFlow[] {
+  switch (datasetId) {
+    case "top50":
+      return [...TRADE_FLOWS].sort((a, b) => b.value - a.value).slice(0, 50);
+    case "top30":
+      return [...TRADE_FLOWS].sort((a, b) => b.value - a.value).slice(0, 30);
+    case "middle_east": {
+      const me = REGIONS.find((r) => r.id === "middle_east")!;
+      return TRADE_FLOWS.filter((f) => me.countries.includes(f.from));
+    }
+    case "americas": {
+      const na = REGIONS.find((r) => r.id === "north_america")!;
+      const sa = REGIONS.find((r) => r.id === "south_america")!;
+      const codes = [...na.countries, ...sa.countries];
+      return TRADE_FLOWS.filter((f) => codes.includes(f.from));
+    }
+    case "africa": {
+      const af = REGIONS.find((r) => r.id === "africa")!;
+      return TRADE_FLOWS.filter((f) => af.countries.includes(f.from));
+    }
+    case "europe": {
+      const ne = REGIONS.find((r) => r.id === "north_europe")!;
+      const me = REGIONS.find((r) => r.id === "med_europe")!;
+      const codes = [...ne.countries, ...me.countries];
+      return TRADE_FLOWS.filter((f) => codes.includes(f.from));
+    }
+    case "russia_cis": {
+      const ru = REGIONS.find((r) => r.id === "russia_cis")!;
+      return TRADE_FLOWS.filter((f) => ru.countries.includes(f.from));
+    }
+    default:
+      return TRADE_FLOWS;
+  }
+}
 
-// ─── Render Country Spheres ─────────────────────────────────────────
+// ─── Build / Rebuild Visualization ──────────────────────────────────
+let currentLaneEntities: Cesium.Entity[] = [];
+let currentAnimHandle: { particles: Cesium.Entity[]; cleanup: () => void } | null = null;
+let currentCullSet: CullableSet | null = null;
+let cullTickListener: Cesium.Event.RemoveCallback | null = null;
+
+function buildVisualization(flows: TradeFlow[]) {
+  // Tear down previous lanes & particles (spheres stay — they don't change)
+  if (currentAnimHandle) currentAnimHandle.cleanup();
+  for (const e of currentLaneEntities) viewer.entities.remove(e);
+
+  // Sea lanes
+  const lanes = createSeaLanes(viewer, flows);
+  currentLaneEntities = lanes.map((l) => l.entity);
+  console.log(`Rendered ${lanes.length} sea lanes`);
+
+  // Flow animation
+  const maxFlowValue = Math.max(...flows.map((f) => f.value), 1);
+  currentAnimHandle = startFlowAnimation(viewer, lanes, maxFlowValue);
+
+  // Rebuild culling set (re-uses existing spheres)
+  if (cullTickListener) cullTickListener();
+  currentCullSet = buildCullableSet(sphereEntities, lanes, currentAnimHandle.particles);
+  cullTickListener = viewer.clock.onTick.addEventListener(() =>
+    updateCulling(viewer, currentCullSet!),
+  );
+}
+
+// ─── Render Country Spheres (always visible) ────────────────────────
 const sphereEntities = createCountrySpheres(viewer);
 
-// ─── Render Sea Lanes ───────────────────────────────────────────────
-const lanes = createSeaLanes(viewer, TRADE_FLOWS);
-console.log(`Rendered ${lanes.length} sea lanes`);
+// ─── Initial Build ──────────────────────────────────────────────────
+console.log(`Building visualization from ${TRADE_FLOWS.length} trade flows (${TRADE_YEAR})`);
+buildVisualization(TRADE_FLOWS);
 
-// ─── Start Flow Animation ───────────────────────────────────────────
-const maxFlowValue = Math.max(...TRADE_FLOWS.map((f) => f.value), 1);
-const animHandle = startFlowAnimation(viewer, lanes, maxFlowValue);
-
-// ─── Hemisphere Culling ─────────────────────────────────────────────
-const cullSet = buildCullableSet(sphereEntities, lanes, animHandle.particles);
-viewer.clock.onTick.addEventListener(() => updateCulling(viewer, cullSet));
-
-// ─── Data Source Label ──────────────────────────────────────────────
-const sourceLabel = document.getElementById("dataSourceLabel");
-if (sourceLabel) {
-  sourceLabel.textContent = `Crude oil trade ${TRADE_YEAR} (est.)`;
-}
+// ─── Dataset Dropdown Wiring ────────────────────────────────────────
+const datasetSelect = document.getElementById("datasetSelect") as HTMLSelectElement | null;
+datasetSelect?.addEventListener("change", () => {
+  const flows = filterFlows(datasetSelect.value);
+  console.log(`Switching to dataset "${datasetSelect.value}" — ${flows.length} flows`);
+  buildVisualization(flows);
+});
 
 // ─── Multi-touch / Trackpad Gesture Support ─────────────────────────
 const controller = viewer.scene.screenSpaceCameraController;

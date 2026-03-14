@@ -11,7 +11,7 @@ const scratchPos = new Cesium.Cartesian3();
 
 // Threshold: cos(~100°) ≈ -0.17  — slightly past the horizon so entities
 // don't pop in/out right at the edge. Negative = behind the globe.
-const DOT_THRESHOLD = -0.15;
+const DOT_THRESHOLD = 0;
 
 export interface CullableSet {
   spheres: Cesium.Entity[];

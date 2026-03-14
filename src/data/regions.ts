@@ -17,7 +17,7 @@ export const REGIONS: Region[] = [
     name: "North America",
     lon: -90,
     lat: 30,
-    countries: ["USA", "CAN", "MEX"],
+    countries: ["USA", "CAN", "MEX", "PAN", "NIC"],
     color: [30, 144, 255], // dodger blue
   },
   {
@@ -27,7 +27,7 @@ export const REGIONS: Region[] = [
     lat: -15,
     countries: [
       "BRA", "VEN", "COL", "ECU", "ARG", "PER", "CHL", "BOL", "PRY",
-      "URY", "GUY", "SUR", "TTO",
+      "URY", "GUY", "SUR", "TTO", "DOM", "JAM",
     ],
     color: [34, 197, 94], // green
   },
@@ -50,7 +50,7 @@ export const REGIONS: Region[] = [
     countries: [
       "ITA", "ESP", "FRA", "GRC", "TUR", "PRT", "HRV", "SVN", "ROU",
       "BGR", "CYP", "MLT", "ALB", "MNE", "SRB", "MKD", "BIH", "HUN",
-      "AUT", "CHE", "CZE", "SVK",
+      "AUT", "CHE", "CZE", "SVK", "GIB",
     ],
     color: [168, 85, 247], // purple
   },
@@ -84,7 +84,7 @@ export const REGIONS: Region[] = [
     countries: [
       "NGA", "AGO", "LBY", "DZA", "EGY", "GNQ", "GAB", "COG", "TCD",
       "CMR", "GHA", "CIV", "SDN", "SSD", "TUN", "MAR", "MOZ", "ZAF",
-      "KEN", "TZA", "UGA", "SEN", "NER", "MRT",
+      "KEN", "TZA", "UGA", "SEN", "NER", "MRT", "COD",
     ],
     color: [234, 179, 8], // yellow
   },

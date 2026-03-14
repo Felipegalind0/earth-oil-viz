@@ -8,8 +8,8 @@
     <link rel="icon" type="image/svg+xml" href="/earth-oil-viz/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Earth Oil Viz</title>
-    <script type="module" crossorigin src="/earth-oil-viz/assets/index-BrKVOHlq.js"></script>
-    <link rel="stylesheet" crossorigin href="/earth-oil-viz/assets/index-AGAIyE3l.css">
+    <script type="module" crossorigin src="/earth-oil-viz/assets/index-Dy3NIk1U.js"></script>
+    <link rel="stylesheet" crossorigin href="/earth-oil-viz/assets/index-Cujdx338.css">
   </head>
   <body>
     <div id="cesiumContainer"></div>
@@ -20,8 +20,24 @@
       <p class="loading-text">Loading oil trade data…</p>
     </div>
 
-    <!-- Data source label -->
-    <div id="dataSourceLabel" class="data-source-label"></div>
+    <!-- Dataset Selector Panel -->
+    <div id="dataPanel" class="data-panel">
+      <label class="data-panel-label" for="datasetSelect">Dataset</label>
+      <select id="datasetSelect" class="data-panel-select">
+        <option value="all">Crude Oil — All Flows (468)</option>
+        <option value="top50">Crude Oil — Top 50 Flows</option>
+        <option value="top30">Crude Oil — Top 30 Flows</option>
+        <option value="middle_east">Middle East Exports</option>
+        <option value="americas">Americas Exports</option>
+        <option value="africa">Africa Exports</option>
+        <option value="europe">Europe Exports</option>
+        <option value="russia_cis">Russia &amp; CIS Exports</option>
+      </select>
+      <div class="data-panel-source">
+        <span class="data-panel-source-heading">Source</span>
+        <span id="dataSourceText">Harvard Atlas of Economic Complexity / UN Comtrade — SITC 3330 crude petroleum (2023)</span>
+      </div>
+    </div>
 
     <!-- 3D Compass Widget -->
     <div id="compassWidget">

@@ -138,16 +138,82 @@ body {
   font-size: 0.95rem;
 }
 
-/* ─── Data Source Label ──────────────────────────────────────────── */
-.data-source-label {
+/* ─── Dataset Selector Panel ─────────────────────────────────────── */
+.data-panel {
   position: fixed;
-  bottom: 8px;
-  left: 8px;
+  top: 16px;
+  left: 16px;
   z-index: 1000;
-  color: rgba(255, 255, 255, 0.5);
+  background: rgba(15, 15, 25, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   font-family: system-ui, -apple-system, sans-serif;
+  min-width: 200px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.data-panel-label {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.data-panel-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e0e0e0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 6px 28px 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23999' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+.data-panel-select:hover,
+.data-panel-select:focus {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.data-panel-select option {
+  background: #1e1e2e;
+  color: #e0e0e0;
+}
+
+.data-panel-source {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 6px;
+}
+
+.data-panel-source-heading {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.data-panel-source span:last-child {
+  color: rgba(255, 255, 255, 0.55);
   font-size: 11px;
-  pointer-events: none;
+  line-height: 1.4;
 }
 
 /* ─── Fallback Warning Modal ─────────────────────────────────────── */

@@ -1,3 +1,8 @@
 node_modules
 dist
 secrets.md
+.priv/
+
+# Raw data files (too large to commit — see README for download instructions)
+PET.txt
+*.csv

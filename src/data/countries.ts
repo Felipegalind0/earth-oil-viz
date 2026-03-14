@@ -23,6 +23,8 @@ const RAW: CountryTuple[] = [
   ["KWT", "Kuwait",            "Mina Al Ahmadi",  29.06,  48.16, "middle_east"],
   ["QAT", "Qatar",             "Ras Laffan",      25.93,  51.57, "middle_east"],
   ["OMN", "Oman",              "Mina Al Fahal",   23.63,  58.53, "middle_east"],
+  ["ISR", "Israel",            "Ashkelon",        31.67,  34.55, "middle_east"],
+  ["JOR", "Jordan",            "Aqaba",           29.52,  35.01, "middle_east"],
 
   // ── Africa ────────────────────────────────────────────────────────
   ["NGA", "Nigeria",           "Bonny Island",     4.42,   7.17, "africa"],
@@ -34,6 +36,15 @@ const RAW: CountryTuple[] = [
   ["GAB", "Gabon",             "Port Gentil",     -0.72,   8.78, "africa"],
   ["COG", "Congo",             "Pointe-Noire",    -4.78,  11.83, "africa"],
   ["ZAF", "South Africa",      "Saldanha Bay",   -33.00,  17.93, "africa"],
+  ["GHA", "Ghana",             "Takoradi",         4.88,  -1.76, "africa"],
+  ["CIV", "Côte d'Ivoire",    "Abidjan",          5.31,  -4.01, "africa"],
+  ["CMR", "Cameroon",          "Kribi",            2.94,   9.91, "africa"],
+  ["TCD", "Chad",              "Kribi (via pipe)",  2.94,   9.91, "africa"],
+  ["SDN", "Sudan",             "Port Sudan",      19.62,  37.22, "africa"],
+  ["SSD", "South Sudan",       "Port Sudan (via)", 19.62, 37.22, "africa"],
+  ["SEN", "Senegal",           "Dakar",           14.69, -17.44, "africa"],
+  ["TUN", "Tunisia",           "La Skhira",       34.30,  10.07, "africa"],
+  ["COD", "DR Congo",          "Muanda",          -5.93,  12.35, "africa"],
 
   // ── Northern Europe ───────────────────────────────────────────────
   ["NOR", "Norway",            "Mongstad",        60.81,   5.03, "north_europe"],
@@ -45,8 +56,10 @@ const RAW: CountryTuple[] = [
   ["BEL", "Belgium",           "Antwerp",         51.30,   4.28, "north_europe"],
   ["POL", "Poland",            "Gdańsk",          54.35,  18.65, "north_europe"],
   ["LTU", "Lithuania",         "Būtingė",         56.07,  21.07, "north_europe"],
+  ["DNK", "Denmark",           "Fredericia",      55.56,   9.75, "north_europe"],
+  ["IRL", "Ireland",           "Whitegate",       51.82,  -8.22, "north_europe"],
 
-  // ── Mediterranean Europe ──────────────────────────────────────────
+  // ── Mediterranean & Central Europe ────────────────────────────────
   ["ITA", "Italy",             "Trieste",         45.65,  13.73, "med_europe"],
   ["ESP", "Spain",             "Cartagena",       37.60,  -0.98, "med_europe"],
   ["FRA", "France",            "Fos-sur-Mer",     43.42,   4.94, "med_europe"],
@@ -56,9 +69,20 @@ const RAW: CountryTuple[] = [
   ["HRV", "Croatia",           "Omišalj",         45.21,  14.54, "med_europe"],
   ["ROU", "Romania",           "Constanța",       44.16,  28.67, "med_europe"],
   ["BGR", "Bulgaria",          "Burgas",          42.49,  27.49, "med_europe"],
+  ["AUT", "Austria",           "Schwechat",       48.13,  16.53, "med_europe"],
+  ["CHE", "Switzerland",       "Basel (pipeline)", 47.56,   7.59, "med_europe"],
+  ["CZE", "Czech Republic",   "Kralupy (pipe)",   50.24,  14.31, "med_europe"],
+  ["HUN", "Hungary",           "Százhalombatta",  47.32,  18.92, "med_europe"],
+  ["SVK", "Slovakia",          "Bratislava",      48.14,  17.11, "med_europe"],
+  ["SRB", "Serbia",            "Pančevo",         44.87,  20.67, "med_europe"],
+  ["GIB", "Gibraltar",         "Gibraltar",       36.14,  -5.35, "med_europe"],
 
   // ── Russia/CIS ────────────────────────────────────────────────────
   ["RUS", "Russia",            "Primorsk",        60.36,  28.61, "russia_cis"],
+  ["KAZ", "Kazakhstan",        "Atyrau",          47.10,  51.91, "russia_cis"],
+  ["AZE", "Azerbaijan",        "Sangachal",       40.19,  49.47, "russia_cis"],
+  ["TKM", "Turkmenistan",      "Turkmenbashi",    40.05,  52.96, "russia_cis"],
+  ["UZB", "Uzbekistan",        "Bukhara",         39.77,  64.42, "russia_cis"],
 
   // ── Americas ──────────────────────────────────────────────────────
   ["USA", "United States",     "LOOP Terminal",   28.88, -90.03, "north_america"],
@@ -71,16 +95,26 @@ const RAW: CountryTuple[] = [
   ["ARG", "Argentina",         "Bahía Blanca",   -38.74, -62.27, "south_america"],
   ["TTO", "Trinidad & Tobago", "Point Fortin",    10.17, -61.69, "south_america"],
   ["GUY", "Guyana",            "Georgetown",       6.81, -58.17, "south_america"],
+  ["CHL", "Chile",             "Quintero",       -32.77, -71.53, "south_america"],
+  ["PER", "Peru",              "La Pampilla",    -12.04, -77.12, "south_america"],
+  ["URY", "Uruguay",           "Montevideo",     -34.91, -56.21, "south_america"],
+  ["PAN", "Panama",            "Charco Azul",      8.08, -82.87, "south_america"],
+  ["DOM", "Dominican Republic","Palenque",        18.28, -69.38, "south_america"],
+  ["JAM", "Jamaica",           "Kingston",        17.97, -76.80, "south_america"],
+  ["NIC", "Nicaragua",         "Puerto Sandino",  12.19, -86.76, "south_america"],
 
   // ── East Asia ─────────────────────────────────────────────────────
   ["CHN", "China",             "Qingdao",         36.07, 120.38, "east_asia"],
   ["JPN", "Japan",             "Chiba",           35.56, 140.08, "east_asia"],
   ["KOR", "South Korea",       "Ulsan",           35.50, 129.38, "east_asia"],
   ["TWN", "Taiwan",            "Kaohsiung",       22.61, 120.27, "east_asia"],
+  ["MNG", "Mongolia",          "Ulaanbaatar",     47.91, 106.91, "east_asia"],
 
   // ── South Asia ────────────────────────────────────────────────────
   ["IND", "India",             "Jamnagar",        22.47,  70.02, "south_asia"],
   ["PAK", "Pakistan",          "Port Qasim",      24.78,  67.35, "south_asia"],
+  ["BGD", "Bangladesh",        "Chittagong",      22.34,  91.81, "south_asia"],
+  ["LKA", "Sri Lanka",         "Colombo",          6.94,  79.84, "south_asia"],
 
   // ── SE Asia & Oceania ─────────────────────────────────────────────
   ["SGP", "Singapore",         "Jurong Island",    1.26, 103.83, "se_asia_oceania"],
@@ -88,6 +122,12 @@ const RAW: CountryTuple[] = [
   ["IDN", "Indonesia",         "Cilacap",         -7.73, 109.02, "se_asia_oceania"],
   ["THA", "Thailand",          "Map Ta Phut",     12.68, 101.15, "se_asia_oceania"],
   ["AUS", "Australia",         "Kwinana",        -32.23, 115.77, "se_asia_oceania"],
+  ["VNM", "Vietnam",           "Vung Tau",        10.35, 107.08, "se_asia_oceania"],
+  ["PHL", "Philippines",       "Batangas",        13.76, 121.06, "se_asia_oceania"],
+  ["BRN", "Brunei",            "Seria",            4.61, 114.32, "se_asia_oceania"],
+  ["MMR", "Myanmar",           "Thilawa",         16.67,  96.25, "se_asia_oceania"],
+  ["NZL", "New Zealand",       "Marsden Point",  -35.83, 174.49, "se_asia_oceania"],
+  ["PNG", "Papua New Guinea",  "Kumul Terminal",  -6.75, 143.70, "se_asia_oceania"],
 ];
 
 export const COUNTRIES: Country[] = RAW.map(([code, name, portName, lat, lon, region]) => ({
