@@ -8,8 +8,8 @@
     <link rel="icon" type="image/svg+xml" href="/earth-oil-viz/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Earth Oil Viz</title>
-    <script type="module" crossorigin src="/earth-oil-viz/assets/index-Dy3NIk1U.js"></script>
-    <link rel="stylesheet" crossorigin href="/earth-oil-viz/assets/index-Cujdx338.css">
+    <script type="module" crossorigin src="/earth-oil-viz/assets/index-BwPHI2jS.js"></script>
+    <link rel="stylesheet" crossorigin href="/earth-oil-viz/assets/index-3_umxU2O.css">
   </head>
   <body>
     <div id="cesiumContainer"></div>
@@ -33,6 +33,17 @@
         <option value="europe">Europe Exports</option>
         <option value="russia_cis">Russia &amp; CIS Exports</option>
       </select>
+      <label class="data-panel-label" for="routeScenarioSelect">Routing Scenario</label>
+      <select id="routeScenarioSelect" class="data-panel-select">
+        <option value="baseline">Baseline</option>
+        <option value="suez_closed">Suez Closed</option>
+        <option value="panama_constrained">Panama Constrained</option>
+        <option value="hormuz_high_risk">Hormuz High Risk</option>
+      </select>
+      <div class="data-panel-scenario">
+        <span class="data-panel-source-heading">Scenario Effect</span>
+        <span id="routeScenarioDescription">Normal corridor costs with all major chokepoints open.</span>
+      </div>
       <div class="data-panel-source">
         <span class="data-panel-source-heading">Source</span>
         <span id="dataSourceText">Harvard Atlas of Economic Complexity / UN Comtrade — SITC 3330 crude petroleum (2023)</span>
