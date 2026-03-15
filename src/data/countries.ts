@@ -1,6 +1,8 @@
 // ─── Country Definitions with Oil Port Coordinates ──────────────────
-// ~47 countries that significantly trade crude oil, positioned at their
-// primary oil terminal/port location (not capital city).
+// Derived from the editable port catalog so routing and documentation use the
+// same source of truth for primary display anchors.
+
+import { COUNTRY_PORTS, getPrimaryPort } from "./ports";
 
 export interface Country {
   code: string;    // ISO-3166 alpha-3
@@ -9,130 +11,21 @@ export interface Country {
   lat: number;
   lon: number;
   region: string;  // region id from regions.ts (for coloring)
+  portCount: number;
 }
 
-// Compact format: [code, name, portName, lat, lon, region]
-type CountryTuple = [string, string, string, number, number, string];
-
-const RAW: CountryTuple[] = [
-  // ── Middle East ───────────────────────────────────────────────────
-  ["SAU", "Saudi Arabia",      "Ras Tanura",      26.64,  50.17, "middle_east"],
-  ["IRQ", "Iraq",              "Al Basrah OT",    29.68,  48.80, "middle_east"],
-  ["IRN", "Iran",              "Kharg Island",    29.23,  50.33, "middle_east"],
-  ["ARE", "UAE",               "Fujairah",        25.12,  56.33, "middle_east"],
-  ["KWT", "Kuwait",            "Mina Al Ahmadi",  29.06,  48.16, "middle_east"],
-  ["QAT", "Qatar",             "Ras Laffan",      25.93,  51.57, "middle_east"],
-  ["OMN", "Oman",              "Mina Al Fahal",   23.63,  58.53, "middle_east"],
-  ["ISR", "Israel",            "Ashkelon",        31.67,  34.55, "middle_east"],
-  ["JOR", "Jordan",            "Aqaba",           29.52,  35.01, "middle_east"],
-
-  // ── Africa ────────────────────────────────────────────────────────
-  ["NGA", "Nigeria",           "Bonny Island",     4.42,   7.17, "africa"],
-  ["AGO", "Angola",            "Soyo Terminal",   -6.13,  12.37, "africa"],
-  ["LBY", "Libya",             "Es Sider",        30.63,  18.35, "africa"],
-  ["DZA", "Algeria",           "Arzew",           35.82,  -0.30, "africa"],
-  ["EGY", "Egypt",             "Ain Sukhna",      29.60,  32.35, "africa"],
-  ["GNQ", "Equatorial Guinea", "Malabo",           3.75,   8.78, "africa"],
-  ["GAB", "Gabon",             "Port Gentil",     -0.72,   8.78, "africa"],
-  ["COG", "Congo",             "Pointe-Noire",    -4.78,  11.83, "africa"],
-  ["ZAF", "South Africa",      "Saldanha Bay",   -33.00,  17.93, "africa"],
-  ["GHA", "Ghana",             "Takoradi",         4.88,  -1.76, "africa"],
-  ["CIV", "Côte d'Ivoire",    "Abidjan",          5.31,  -4.01, "africa"],
-  ["CMR", "Cameroon",          "Kribi",            2.94,   9.91, "africa"],
-  ["TCD", "Chad",              "Kribi (via pipe)",  2.94,   9.91, "africa"],
-  ["SDN", "Sudan",             "Port Sudan",      19.62,  37.22, "africa"],
-  ["SSD", "South Sudan",       "Port Sudan (via)", 19.62, 37.22, "africa"],
-  ["SEN", "Senegal",           "Dakar",           14.69, -17.44, "africa"],
-  ["TUN", "Tunisia",           "La Skhira",       34.30,  10.07, "africa"],
-  ["COD", "DR Congo",          "Muanda",          -5.93,  12.35, "africa"],
-
-  // ── Northern Europe ───────────────────────────────────────────────
-  ["NOR", "Norway",            "Mongstad",        60.81,   5.03, "north_europe"],
-  ["GBR", "United Kingdom",    "Fawley",          50.85,  -1.33, "north_europe"],
-  ["NLD", "Netherlands",       "Rotterdam",       51.90,   4.50, "north_europe"],
-  ["DEU", "Germany",           "Wilhelmshaven",   53.51,   8.12, "north_europe"],
-  ["SWE", "Sweden",            "Gothenburg",      57.70,  11.80, "north_europe"],
-  ["FIN", "Finland",           "Porvoo",          60.31,  25.55, "north_europe"],
-  ["BEL", "Belgium",           "Antwerp",         51.30,   4.28, "north_europe"],
-  ["POL", "Poland",            "Gdańsk",          54.35,  18.65, "north_europe"],
-  ["LTU", "Lithuania",         "Būtingė",         56.07,  21.07, "north_europe"],
-  ["DNK", "Denmark",           "Fredericia",      55.56,   9.75, "north_europe"],
-  ["IRL", "Ireland",           "Whitegate",       51.82,  -8.22, "north_europe"],
-
-  // ── Mediterranean & Central Europe ────────────────────────────────
-  ["ITA", "Italy",             "Trieste",         45.65,  13.73, "med_europe"],
-  ["ESP", "Spain",             "Cartagena",       37.60,  -0.98, "med_europe"],
-  ["FRA", "France",            "Fos-sur-Mer",     43.42,   4.94, "med_europe"],
-  ["GRC", "Greece",            "Agioi Theodoroi", 37.94,  23.06, "med_europe"],
-  ["TUR", "Turkey",            "Ceyhan",          36.68,  35.80, "med_europe"],
-  ["PRT", "Portugal",          "Sines",           37.95,  -8.87, "med_europe"],
-  ["HRV", "Croatia",           "Omišalj",         45.21,  14.54, "med_europe"],
-  ["ROU", "Romania",           "Constanța",       44.16,  28.67, "med_europe"],
-  ["BGR", "Bulgaria",          "Burgas",          42.49,  27.49, "med_europe"],
-  ["AUT", "Austria",           "Schwechat",       48.13,  16.53, "med_europe"],
-  ["CHE", "Switzerland",       "Basel (pipeline)", 47.56,   7.59, "med_europe"],
-  ["CZE", "Czech Republic",   "Kralupy (pipe)",   50.24,  14.31, "med_europe"],
-  ["HUN", "Hungary",           "Százhalombatta",  47.32,  18.92, "med_europe"],
-  ["SVK", "Slovakia",          "Bratislava",      48.14,  17.11, "med_europe"],
-  ["SRB", "Serbia",            "Pančevo",         44.87,  20.67, "med_europe"],
-  ["GIB", "Gibraltar",         "Gibraltar",       36.14,  -5.35, "med_europe"],
-
-  // ── Russia/CIS ────────────────────────────────────────────────────
-  ["RUS", "Russia",            "Primorsk",        60.36,  28.61, "russia_cis"],
-  ["KAZ", "Kazakhstan",        "Atyrau",          47.10,  51.91, "russia_cis"],
-  ["AZE", "Azerbaijan",        "Sangachal",       40.19,  49.47, "russia_cis"],
-  ["TKM", "Turkmenistan",      "Turkmenbashi",    40.05,  52.96, "russia_cis"],
-  ["UZB", "Uzbekistan",        "Bukhara",         39.77,  64.42, "russia_cis"],
-
-  // ── Americas ──────────────────────────────────────────────────────
-  ["USA", "United States",     "LOOP Terminal",   28.88, -90.03, "north_america"],
-  ["CAN", "Canada",            "Saint John NB",   45.26, -66.06, "north_america"],
-  ["MEX", "Mexico",            "Dos Bocas",       18.43, -93.17, "north_america"],
-  ["BRA", "Brazil",            "Angra dos Reis", -23.01, -44.32, "south_america"],
-  ["VEN", "Venezuela",         "Jose Terminal",   10.17, -65.01, "south_america"],
-  ["COL", "Colombia",          "Coveñas",          9.40, -75.69, "south_america"],
-  ["ECU", "Ecuador",           "Esmeraldas",       0.97, -79.63, "south_america"],
-  ["ARG", "Argentina",         "Bahía Blanca",   -38.74, -62.27, "south_america"],
-  ["TTO", "Trinidad & Tobago", "Point Fortin",    10.17, -61.69, "south_america"],
-  ["GUY", "Guyana",            "Georgetown",       6.81, -58.17, "south_america"],
-  ["CHL", "Chile",             "Quintero",       -32.77, -71.53, "south_america"],
-  ["PER", "Peru",              "La Pampilla",    -12.04, -77.12, "south_america"],
-  ["URY", "Uruguay",           "Montevideo",     -34.91, -56.21, "south_america"],
-  ["PAN", "Panama",            "Charco Azul",      8.08, -82.87, "south_america"],
-  ["DOM", "Dominican Republic","Palenque",        18.28, -69.38, "south_america"],
-  ["JAM", "Jamaica",           "Kingston",        17.97, -76.80, "south_america"],
-  ["NIC", "Nicaragua",         "Puerto Sandino",  12.19, -86.76, "south_america"],
-
-  // ── East Asia ─────────────────────────────────────────────────────
-  ["CHN", "China",             "Qingdao",         36.07, 120.38, "east_asia"],
-  ["JPN", "Japan",             "Chiba",           35.56, 140.08, "east_asia"],
-  ["KOR", "South Korea",       "Ulsan",           35.50, 129.38, "east_asia"],
-  ["TWN", "Taiwan",            "Kaohsiung",       22.61, 120.27, "east_asia"],
-  ["MNG", "Mongolia",          "Ulaanbaatar",     47.91, 106.91, "east_asia"],
-
-  // ── South Asia ────────────────────────────────────────────────────
-  ["IND", "India",             "Jamnagar",        22.47,  70.02, "south_asia"],
-  ["PAK", "Pakistan",          "Port Qasim",      24.78,  67.35, "south_asia"],
-  ["BGD", "Bangladesh",        "Chittagong",      22.34,  91.81, "south_asia"],
-  ["LKA", "Sri Lanka",         "Colombo",          6.94,  79.84, "south_asia"],
-
-  // ── SE Asia & Oceania ─────────────────────────────────────────────
-  ["SGP", "Singapore",         "Jurong Island",    1.26, 103.83, "se_asia_oceania"],
-  ["MYS", "Malaysia",          "Pengerang",        1.36, 104.18, "se_asia_oceania"],
-  ["IDN", "Indonesia",         "Cilacap",         -7.73, 109.02, "se_asia_oceania"],
-  ["THA", "Thailand",          "Map Ta Phut",     12.68, 101.15, "se_asia_oceania"],
-  ["AUS", "Australia",         "Kwinana",        -32.23, 115.77, "se_asia_oceania"],
-  ["VNM", "Vietnam",           "Vung Tau",        10.35, 107.08, "se_asia_oceania"],
-  ["PHL", "Philippines",       "Batangas",        13.76, 121.06, "se_asia_oceania"],
-  ["BRN", "Brunei",            "Seria",            4.61, 114.32, "se_asia_oceania"],
-  ["MMR", "Myanmar",           "Thilawa",         16.67,  96.25, "se_asia_oceania"],
-  ["NZL", "New Zealand",       "Marsden Point",  -35.83, 174.49, "se_asia_oceania"],
-  ["PNG", "Papua New Guinea",  "Kumul Terminal",  -6.75, 143.70, "se_asia_oceania"],
-];
-
-export const COUNTRIES: Country[] = RAW.map(([code, name, portName, lat, lon, region]) => ({
-  code, name, portName, lat, lon, region,
-}));
+export const COUNTRIES: Country[] = COUNTRY_PORTS.map((entry) => {
+  const primaryPort = getPrimaryPort(entry.code);
+  return {
+    code: entry.code,
+    name: entry.name,
+    portName: primaryPort.name,
+    lat: primaryPort.lat,
+    lon: primaryPort.lon,
+    region: entry.region,
+    portCount: entry.ports.length,
+  };
+});
 
 /** ISO-3166 alpha-3 → Country lookup */
 export const COUNTRY_MAP = new Map<string, Country>();

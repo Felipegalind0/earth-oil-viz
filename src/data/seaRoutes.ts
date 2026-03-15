@@ -2,6 +2,10 @@
 // Defines a logistics-aware maritime corridor graph plus a small set of
 // explicit pipeline overrides for obviously overland crude flows.
 
+import { COUNTRY_ROUTE_ENTRY_WAYPOINTS } from "./ports";
+import { PIPELINE_ROUTES } from "./pipelines";
+import type { PipelineRouteDefinition } from "./pipelines";
+
 /** [latitude, longitude] */
 export type LatLon = [number, number];
 
@@ -132,13 +136,6 @@ interface MaritimeEdge {
   riskHours?: number;
   tags?: ScenarioTag[];
   geometry?: LatLon[];
-}
-
-interface PipelineRouteDefinition {
-  from: string;
-  to: string;
-  points: LatLon[];
-  bidirectional?: boolean;
 }
 
 // Each maritime edge encodes transit profile rather than pure geometry so
@@ -452,53 +449,6 @@ const SCENARIO_RULES: Record<RouteScenarioId, ScenarioRule> = {
   },
 };
 
-const PIPELINE_ROUTES: PipelineRouteDefinition[] = [
-  {
-    from: "CAN",
-    to: "USA",
-    bidirectional: true,
-    points: [
-      [45.26, -66.06],
-      [45.50, -73.57],
-      [43.65, -79.38],
-      [43.04, -87.91],
-      [35.47, -97.52],
-      [29.76, -95.37],
-      [28.88, -90.03],
-    ],
-  },
-  {
-    from: "NLD",
-    to: "BEL",
-    bidirectional: true,
-    points: [
-      [51.90, 4.50],
-      [51.65, 4.55],
-      [51.30, 4.28],
-    ],
-  },
-  {
-    from: "NLD",
-    to: "DEU",
-    bidirectional: true,
-    points: [
-      [51.90, 4.50],
-      [52.10, 6.40],
-      [53.51, 8.12],
-    ],
-  },
-];
-
-const COUNTRY_WAYPOINT_OVERRIDES: Partial<Record<string, string[]>> = {
-  SAU: ["persian_gulf"],
-  IRQ: ["persian_gulf"],
-  IRN: ["persian_gulf"],
-  KWT: ["persian_gulf"],
-  QAT: ["persian_gulf"],
-  ARE: ["gulf_of_oman", "hormuz"],
-  OMN: ["gulf_of_oman"],
-};
-
 // ─── Haversine Distance ─────────────────────────────────────────────
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -674,7 +624,7 @@ function routeEntryWaypoints(
   lon: number,
   n: number = 3,
 ): { name: string; dist: number }[] {
-  const overrides = COUNTRY_WAYPOINT_OVERRIDES[countryCode];
+  const overrides = COUNTRY_ROUTE_ENTRY_WAYPOINTS[countryCode];
   if (!overrides || overrides.length === 0) {
     return nearestWaypoints(lat, lon, n);
   }

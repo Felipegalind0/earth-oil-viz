@@ -7,13 +7,16 @@
     "dev": "vite",
     "build": "tsc && vite build && cp -r dist/earth-oil-viz/cesium dist/cesium",
     "preview": "vite preview",
-    "deploy": "npm run build && gh-pages -d dist"
+    "deploy": "npm run build && gh-pages -d dist",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "gh-pages": "^6.3.0",
     "typescript": "~5.9.3",
     "vite": "^7.3.1",
-    "vite-plugin-cesium": "^1.2.23"
+    "vite-plugin-cesium": "^1.2.23",
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "cesium": "^1.139.1"

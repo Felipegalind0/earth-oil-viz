@@ -11,6 +11,19 @@ const BASE_RADIUS = 35_000;
 /** Scaling factor for log(volume) */
 const LOG_SCALE = 18_000;
 
+function createImporterMarkerSvg(color: Cesium.Color): string {
+  const stroke = color.toCssColorString();
+  const outline = "rgba(0, 0, 0, 0.45)";
+  return `data:image/svg+xml;utf8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+      <line x1="22" y1="22" x2="74" y2="74" stroke="${outline}" stroke-width="22" stroke-linecap="round"/>
+      <line x1="74" y1="22" x2="22" y2="74" stroke="${outline}" stroke-width="22" stroke-linecap="round"/>
+      <line x1="22" y1="22" x2="74" y2="74" stroke="${stroke}" stroke-width="14" stroke-linecap="round"/>
+      <line x1="74" y1="22" x2="22" y2="74" stroke="${stroke}" stroke-width="14" stroke-linecap="round"/>
+    </svg>`,
+  )}`;
+}
+
 export function createCountrySpheres(
   viewer: Cesium.Viewer,
 ): Cesium.Entity[] {
@@ -39,6 +52,12 @@ export function createCountrySpheres(
     const tintG = ratio >= 0 ? Math.max(0, gg - 30 * ratio) : Math.min(255, gg + 30);
     const tintB = ratio >= 0 ? Math.max(0, bb - 50 * ratio) : Math.min(255, bb + 60);
     const color = new Cesium.Color(tintR / 255, tintG / 255, tintB / 255, 0.65);
+    const isNetImporter = imp > exp;
+    const importerMarkerSize = Cesium.Math.clamp(
+      18 + Math.log1p(total / 1e9) * 5,
+      18,
+      42,
+    );
 
     // Format volume for label
     const expB = (exp / 1e9).toFixed(0);
@@ -47,24 +66,37 @@ export function createCountrySpheres(
     const entity = viewer.entities.add({
       name: country.name,
       position: Cesium.Cartesian3.fromDegrees(country.lon, country.lat, radius),
-      ellipsoid: {
-        radii: new Cesium.Cartesian3(radius, radius, radius),
-        material: color,
-      },
+      ellipsoid: isNetImporter
+        ? undefined
+        : {
+          radii: new Cesium.Cartesian3(radius, radius, radius),
+          material: color,
+        },
+      billboard: isNetImporter
+        ? {
+          image: createImporterMarkerSvg(color),
+          width: importerMarkerSize,
+          height: importerMarkerSize,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scaleByDistance: new Cesium.NearFarScalar(5e5, 1.0, 1.5e7, 0.35),
+        }
+        : undefined,
       label: {
         text: country.code,
         font: "bold 12px sans-serif",
         style: Cesium.LabelStyle.FILL_AND_OUTLINE,
         outlineWidth: 2,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        pixelOffset: new Cesium.Cartesian2(0, -14),
+        pixelOffset: new Cesium.Cartesian2(0, isNetImporter ? -26 : -14),
         fillColor: Cesium.Color.WHITE,
         outlineColor: Cesium.Color.BLACK,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
         scaleByDistance: new Cesium.NearFarScalar(5e5, 1.0, 1.5e7, 0.3),
       },
       description: `<b>${country.name}</b> (${country.portName})<br/>` +
-        `Exports: $${expB}B / Imports: $${impB}B`,
+        `Exports: $${expB}B / Imports: $${impB}B<br/>` +
+        `Port catalog entries: ${country.portCount}`,
     });
 
     entities.push(entity);

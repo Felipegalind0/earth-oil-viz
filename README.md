@@ -26,6 +26,17 @@ The raw CSV (`sitc_country_country_product_year_4_2020_2024.csv`) is not committ
 
 An EIA PET bulk dataset (`PET.txt` from [eia.gov/opendata/bulk/PET.zip](https://www.eia.gov/opendata/bulk/PET.zip)) was also explored. It contains ~195K US-centric petroleum series (imports, exports, production, prices, stocks by PADD region and state). Analysis scripts are in `scripts/scan_pet.py`, `scripts/catalog_pet.py`, and `scripts/deep_dive_pet.py`. This dataset may be used for a future US drill-down view.
 
+### Port And Pipeline Sources
+
+The trade values come from the Harvard Atlas download pipeline above. The route network uses separate manually curated location and infrastructure references:
+
+- **Port naming and locality reference**: UNECE UN/LOCODE. Used as a standardized port-location reference when choosing named terminals and coastal localities.
+- **Terminal selection**: public port authority, refinery, and operator documentation. Used to prefer crude terminals, offshore loading points, and refinery receipt points over country centroids.
+- **Pipeline reference**: [Global Energy Monitor's Global Oil Infrastructure Tracker](https://globalenergymonitor.org/projects/global-oil-infrastructure-tracker/). Used to decide which bilateral flows should be represented as overland pipeline corridors and to sketch generalized pipeline paths.
+- **Cartographic verification**: manual map checks to place each point near the operational terminal or inland receipt node used in the visualization.
+
+These route and terminal layers are schematic. They are intended to tell a more realistic logistics story than simple great-circle lines, not to reproduce survey-grade AIS or engineering GIS.
+
 ### Citation
 
 > Growth Lab at Harvard University. "The Atlas of Economic Complexity." https://atlas.hks.harvard.edu
@@ -39,24 +50,52 @@ src/
 ├── style.css                        # UI styles
 ├── data/
 │   ├── tradeFlows.ts                # AUTO-GENERATED — 468 bilateral crude oil flows
-│   ├── countries.ts                 # 96 countries with oil port/terminal coordinates
+│   ├── ports.ts                     # Editable port catalog, alternate terminals, source groups
+│   ├── pipelines.ts                 # Editable pipeline corridor catalog and source groups
+│   ├── countries.ts                 # Derived country display anchors from the port catalog
 │   ├── regions.ts                   # 10 regions for color grouping
-│   └── seaRoutes.ts                 # Scenario-aware corridor routing + pipeline overrides
+│   └── seaRoutes.ts                 # Scenario-aware maritime corridor routing
 └── visualization/
     ├── regionSpheres.ts             # Country spheres sized by trade volume
-    ├── seaLanes.ts                  # Polyline sea routes with width ∝ flow value
-    └── flowAnimation.ts            # Animated particles along routes (CallbackProperty)
+    └── seaLanes.ts                  # Maritime and pipeline route rendering
 ```
 
 ### Key Technical Details
 
-- **Trade routing**: Dijkstra on a logistics-aware maritime corridor graph, with edge costs based on corridor type, chokepoint penalties, and canal delays. A small explicit pipeline layer handles obvious overland cases such as Canada→United States and Benelux refinery corridors.
+- **Trade routing**: Dijkstra on a logistics-aware maritime corridor graph, with edge costs based on corridor type, chokepoint penalties, and canal delays. A separate editable pipeline layer handles obvious overland cases such as Canada→United States, Russia→China, Kazakhstan→China, and short refinery corridors in Northwest Europe.
 - **Corridor geometry**: Key chokepoints and coastal approaches now use authored segment geometry for Hormuz, Suez, Gibraltar, the English Channel, Danish Straits, Bosphorus, Malacca, Panama, the Cape route, and several Atlantic/African coastal legs.
 - **Scenario controls**: The UI can rebuild routes for Baseline, Suez Closed, Panama Constrained, and Hormuz High Risk cases. These scenarios change graph costs or closures and trigger actual rerouting.
 - **Hemisphere culling**: Entities on the far side of the globe are hidden each frame via a dot-product test (camera normal · entity normal). Zero-allocation per frame using scratch vectors.
-- **Flow animation**: 5 particles per lane, phase-offset, using `CallbackProperty` for per-frame position interpolation. Speed and size scale with flow value.
+- **Rendering strategy**: Lanes are rendered as persistent corridors only. The particle animation path was removed to reduce per-frame GPU and CPU work.
 - **Country spheres**: Sized by `log1p(totalTradeVolume)`, colored by region with warm/cool tinting based on net exporter/importer status.
 - **Gesture handling**: Trackpad-aware (distinguishes two-finger swipe from mouse wheel), Safari `GestureEvent` support, touchscreen pointer fallback.
+
+## Methods
+
+The route model is built in layers:
+
+1. **Trade flows** come from Atlas bilateral SITC 3330 exports and are thresholded at $100M.
+2. **Country anchors** are derived from a manual port catalog in `src/data/ports.ts`. Each country has one primary display anchor and can have alternate terminals for future route refinement.
+3. **Pipeline corridors** live in `src/data/pipelines.ts`. They are generalized paths for flows that should not be shown as maritime.
+4. **Maritime corridors** live in `src/data/seaRoutes.ts`. Each corridor has a profile, optional authored geometry, and optional scenario tags.
+5. **Route selection** uses Dijkstra on generalized transit cost, not pure distance. Canal delays, chokepoint risk, and closures can change the selected path.
+
+This means the visualization is no longer a pure geometry problem. It is a hand-curated logistics model that mixes trade data with transport assumptions.
+
+## Editing The Network
+
+If you want to edit the route model directly, use these files:
+
+- `src/data/ports.ts`: add ports, alternate terminals, source notes, and special country-to-waypoint entry rules.
+- `src/data/pipelines.ts`: add or modify overland pipeline corridors.
+- `src/data/seaRoutes.ts`: edit maritime chokepoints, corridor geometry, or scenario penalties.
+
+The intended workflow is:
+
+1. Add or update terminals in `ports.ts`.
+2. Add pipeline corridors in `pipelines.ts` for flows that should not be maritime.
+3. Tune maritime geometry or scenario cost in `seaRoutes.ts`.
+4. Run `npm run build` to validate the network changes.
 
 ## Setup
 

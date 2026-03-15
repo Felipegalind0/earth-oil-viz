@@ -10,9 +10,9 @@ import { ROUTE_SCENARIOS } from "./data/seaRoutes";
 import type { RouteScenarioId } from "./data/seaRoutes";
 import { createCountrySpheres } from "./visualization/regionSpheres";
 import { createSeaLanes } from "./visualization/seaLanes";
-import { startFlowAnimation } from "./visualization/flowAnimation";
 import { buildCullableSet, updateCulling } from "./culling";
 import type { CullableSet } from "./culling";
+import { shortestAngleDeltaDeg, compensateInvertedHeading, compassTilt } from "./mathUtils";
 
 // ─── Read API key from URL params ───────────────────────────────────
 const params = new URLSearchParams(window.location.search);
@@ -116,7 +116,6 @@ function filterFlows(datasetId: string): TradeFlow[] {
 
 // ─── Build / Rebuild Visualization ──────────────────────────────────
 let currentLaneEntities: Cesium.Entity[] = [];
-let currentAnimHandle: { particles: Cesium.Entity[]; cleanup: () => void } | null = null;
 let currentCullSet: CullableSet | null = null;
 let cullTickListener: Cesium.Event.RemoveCallback | null = null;
 let currentDatasetId = "all";
@@ -135,22 +134,17 @@ function rebuildCurrentVisualization(): void {
 }
 
 function buildVisualization(flows: TradeFlow[]) {
-  // Tear down previous lanes & particles (spheres stay — they don't change)
-  if (currentAnimHandle) currentAnimHandle.cleanup();
+  // Tear down previous lanes (spheres stay — they don't change)
   for (const e of currentLaneEntities) viewer.entities.remove(e);
 
-  // Sea lanes
+  // Trade lanes
   const lanes = createSeaLanes(viewer, flows, currentScenarioId);
   currentLaneEntities = lanes.map((l) => l.entity);
   console.log(`Rendered ${lanes.length} trade lanes for scenario "${currentScenarioId}"`);
 
-  // Flow animation
-  const maxFlowValue = Math.max(...flows.map((f) => f.value), 1);
-  currentAnimHandle = startFlowAnimation(viewer, lanes, maxFlowValue);
-
   // Rebuild culling set (re-uses existing spheres)
   if (cullTickListener) cullTickListener();
-  currentCullSet = buildCullableSet(sphereEntities, lanes, currentAnimHandle.particles);
+  currentCullSet = buildCullableSet(sphereEntities, lanes);
   cullTickListener = viewer.clock.onTick.addEventListener(() =>
     updateCulling(viewer, currentCullSet!),
   );
@@ -158,6 +152,54 @@ function buildVisualization(flows: TradeFlow[]) {
 
 // ─── Render Country Spheres (always visible) ────────────────────────
 const sphereEntities = createCountrySpheres(viewer);
+const waypointEntitySet = new Set(sphereEntities);
+let hadWaypointSelection = false;
+
+function isWaypointEntity(entity: Cesium.Entity | undefined): boolean {
+  return entity !== undefined && waypointEntitySet.has(entity);
+}
+
+function exitWaypointPoiMode(clearSelection: boolean): void {
+  viewer.trackedEntity = undefined;
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  if (clearSelection) {
+    viewer.selectedEntity = undefined;
+  }
+  hadWaypointSelection = false;
+
+  // Fly camera back to top-down (perpendicular) view, keeping current position & heading
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
+    orientation: {
+      heading: viewer.camera.heading,
+      pitch: Cesium.Math.toRadians(-90),
+      roll: 0,
+    },
+    duration: 0.5,
+  });
+}
+
+viewer.selectedEntityChanged.addEventListener((entity) => {
+  if (isWaypointEntity(entity)) {
+    hadWaypointSelection = true;
+    return;
+  }
+
+  if (!entity && hadWaypointSelection) {
+    exitWaypointPoiMode(false);
+    return;
+  }
+
+  if (entity && !isWaypointEntity(entity) && hadWaypointSelection) {
+    exitWaypointPoiMode(false);
+  }
+});
+
+viewer.infoBox?.viewModel.closeClicked.addEventListener(() => {
+  if (hadWaypointSelection || isWaypointEntity(viewer.selectedEntity) || isWaypointEntity(viewer.trackedEntity)) {
+    exitWaypointPoiMode(true);
+  }
+});
 
 // ─── Initial Build ──────────────────────────────────────────────────
 console.log(`Building visualization from ${TRADE_FLOWS.length} trade flows (${TRADE_YEAR})`);
@@ -165,6 +207,25 @@ updateScenarioDescription();
 rebuildCurrentVisualization();
 
 // ─── Dataset Dropdown Wiring ────────────────────────────────────────
+const dataPanel = document.getElementById("dataPanel") as HTMLDivElement | null;
+const dataPanelToggle = document.getElementById("dataPanelToggle") as HTMLButtonElement | null;
+
+function setDataPanelMinimized(minimized: boolean): void {
+  if (!dataPanel || !dataPanelToggle) return;
+  dataPanel.classList.toggle("is-minimized", minimized);
+  dataPanelToggle.textContent = minimized ? "Show Data Overlay" : "Hide Data Overlay";
+  dataPanelToggle.setAttribute("aria-expanded", minimized ? "false" : "true");
+}
+
+if (dataPanel && dataPanelToggle) {
+  // Default collapsed on first load.
+  setDataPanelMinimized(true);
+  dataPanelToggle.addEventListener("click", () => {
+    const currentlyMinimized = dataPanel.classList.contains("is-minimized");
+    setDataPanelMinimized(!currentlyMinimized);
+  });
+}
+
 const datasetSelect = document.getElementById("datasetSelect") as HTMLSelectElement | null;
 datasetSelect?.addEventListener("change", () => {
   currentDatasetId = datasetSelect.value;
@@ -215,6 +276,61 @@ let lastWheelTime = 0;
 let isTrackpad = false;
 
 const canvas = viewer.scene.canvas;
+const scratchScreenCenter = new Cesium.Cartesian2();
+const scratchOrbitTransform = new Cesium.Matrix4();
+let lastOrbitTarget: Cesium.Cartesian3 | null = null;
+
+function getOrbitTargetAtScreenCenter(): Cesium.Cartesian3 | null {
+  scratchScreenCenter.x = canvas.clientWidth * 0.5;
+  scratchScreenCenter.y = canvas.clientHeight * 0.5;
+
+  const ray = viewer.camera.getPickRay(scratchScreenCenter);
+  let target = ray ? viewer.scene.globe.pick(ray, viewer.scene) : undefined;
+
+  if (!target) {
+    target = viewer.camera.pickEllipsoid(scratchScreenCenter, viewer.scene.globe.ellipsoid) ?? undefined;
+  }
+
+  if (target) {
+    if (lastOrbitTarget) {
+      Cesium.Cartesian3.clone(target, lastOrbitTarget);
+    } else {
+      lastOrbitTarget = Cesium.Cartesian3.clone(target);
+    }
+  }
+
+  return lastOrbitTarget;
+}
+
+function orbitCameraAroundTarget(pitchDeltaRad: number, headingDeltaRad = 0): void {
+  const target = getOrbitTargetAtScreenCenter();
+  if (!target) return;
+
+  // Ensure custom orbit is not fighting entity tracking / POI mode transforms.
+  viewer.trackedEntity = undefined;
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+
+  const orbitTransform = Cesium.Transforms.eastNorthUpToFixedFrame(target, undefined, scratchOrbitTransform);
+  viewer.camera.lookAtTransform(orbitTransform);
+  if (headingDeltaRad !== 0) {
+    viewer.camera.rotateRight(headingDeltaRad);
+  }
+  if (pitchDeltaRad !== 0) {
+    viewer.camera.rotateUp(pitchDeltaRad);
+  }
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+
+  // Keep horizon alignment stable after custom orbit operations.
+  viewer.camera.setView({
+    destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
+    orientation: {
+      heading: viewer.camera.heading,
+      pitch: viewer.camera.pitch,
+      roll: 0,
+    },
+  });
+}
+
 canvas.addEventListener(
   "wheel",
   (e: WheelEvent) => {
@@ -243,20 +359,30 @@ canvas.addEventListener(
           viewer.camera.zoomOut(height * -zoomFraction);
         }
       }
-    } else if (e.shiftKey && isTrackpad) {
-      // Shift + two-finger swipe → rotate camera heading (Chrome/Firefox workaround)
-      const headingDelta = e.deltaX * 0.15 + e.deltaY * 0.15;
-      viewer.camera.twistRight(Cesium.Math.toRadians(headingDelta));
+    } else if (e.shiftKey) {
+      // Shift + two-finger swipe → orbit around center target
+      // vertical motion: pitch orbit, horizontal motion: heading orbit
+      const pitchDelta = e.deltaY * 0.15;
+      const headingDelta = e.deltaX * 0.15;
+      orbitCameraAroundTarget(
+        Cesium.Math.toRadians(pitchDelta),
+        Cesium.Math.toRadians(headingDelta),
+      );
     } else if (isTrackpad) {
       // Two-finger swipe → orbit (rotate around the globe like click-drag)
+      // Temporarily remove the constrained axis so rotateRight uses
+      // the camera's local up (heading-aware) instead of the globe's
+      // fixed north pole axis.
       const camera = viewer.camera;
       const height = camera.positionCartographic.height;
-      // Scale rotation speed to altitude so it feels consistent
       const factor = height / 6_000_000;
-      const deltaLon = e.deltaX * 0.05 * factor;
-      const deltaLat = e.deltaY * 0.05 * factor;
-      camera.rotateRight(Cesium.Math.toRadians(deltaLon));
-      camera.rotateUp(Cesium.Math.toRadians(deltaLat));
+      const dx = e.deltaX * 0.05 * factor;
+      const dy = e.deltaY * 0.05 * factor;
+      const savedAxis = camera.constrainedAxis;
+      camera.constrainedAxis = undefined;
+      camera.rotateRight(Cesium.Math.toRadians(dx));
+      camera.rotateUp(Cesium.Math.toRadians(dy));
+      camera.constrainedAxis = savedAxis;
     } else {
       // Regular mouse scroll wheel → zoom
       const zoomAmount = e.deltaY;
@@ -294,7 +420,7 @@ if ("GestureEvent" in window) {
     const rotDelta = ge.rotation - lastGestureRotation;
     lastGestureRotation = ge.rotation;
     if (Math.abs(rotDelta) > 0.1) {
-      viewer.camera.twistRight(Cesium.Math.toRadians(-rotDelta));
+      orbitCameraAroundTarget(0, Cesium.Math.toRadians(-rotDelta));
     }
 
     // Pinch-to-zoom via scale
@@ -339,7 +465,7 @@ canvas.addEventListener("pointermove", (e: PointerEvent) => {
     if (angle !== null) {
       const delta = angle - prevAngle;
       if (Math.abs(delta) > 0.003 && Math.abs(delta) < Math.PI) {
-        viewer.camera.twistRight(-delta);
+        orbitCameraAroundTarget(0, -delta);
       }
       prevAngle = angle;
     }
@@ -357,20 +483,61 @@ canvas.addEventListener("pointerup", removePointer);
 canvas.addEventListener("pointercancel", removePointer);
 
 // ─── 3D Compass Widget ─────────────────────────────────────────────
+const compassWidget = document.getElementById("compassWidget");
 const compassRing = document.querySelector<HTMLElement>(".compass-ring");
+let lastCompassHeadingDeg: number | null = null;
+let displayCompassHeadingDeg = 0;
+const scratchSurfaceNormal = new Cesium.Cartesian3();
 
 function updateCompass() {
   if (!compassRing) return;
-  const heading = Cesium.Math.toDegrees(viewer.camera.heading);
+  let headingDeg = Cesium.Math.toDegrees(
+    Cesium.Math.zeroToTwoPi(viewer.camera.heading),
+  );
+
+  const surfaceNormal = Cesium.Cartesian3.normalize(viewer.camera.positionWC, scratchSurfaceNormal);
+  const isLookingAwayFromGlobe = Cesium.Cartesian3.dot(viewer.camera.directionWC, surfaceNormal) > 0;
+  headingDeg = compensateInvertedHeading(headingDeg, isLookingAwayFromGlobe);
+
+  if (lastCompassHeadingDeg === null) {
+    lastCompassHeadingDeg = headingDeg;
+    displayCompassHeadingDeg = headingDeg;
+  } else {
+    displayCompassHeadingDeg += shortestAngleDeltaDeg(lastCompassHeadingDeg, headingDeg);
+    lastCompassHeadingDeg = headingDeg;
+  }
+
   const pitch = Cesium.Math.toDegrees(viewer.camera.pitch);
-  // Rotate ring opposite to heading so needle points north;
-  // tilt ring on X axis to reflect camera pitch for a 3D effect.
-  const tiltX = Math.min(Math.max(pitch + 90, 0), 60); // 0-60° tilt range
-  compassRing.style.transform = `rotateX(${tiltX}deg) rotateZ(${-heading}deg)`;
+
+  const [tiltX, tiltY] = compassTilt(pitch, displayCompassHeadingDeg);
+  compassRing.style.transform = `rotateX(${tiltX}deg) rotateY(${tiltY}deg) rotateZ(${-displayCompassHeadingDeg}deg)`;
 }
 
 viewer.clock.onTick.addEventListener(updateCompass);
 updateCompass();
+
+compassWidget?.addEventListener("click", () => {
+  // If in POI orbit mode, exit it first so flyTo isn't fighting the tracking transform
+  if (hadWaypointSelection || viewer.trackedEntity) {
+    viewer.trackedEntity = undefined;
+    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    viewer.selectedEntity = undefined;
+    hadWaypointSelection = false;
+  }
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
+    orientation: {
+      heading: 0,
+      pitch: Cesium.Math.toRadians(-90),
+      roll: 0,
+    },
+    duration: 0.7,
+  });
+});
+
+if (compassWidget) {
+  compassWidget.title = "Reset camera to north-up & top-down";
+}
 
 // ─── Initial Camera View ────────────────────────────────────────────
 viewer.camera.setView({

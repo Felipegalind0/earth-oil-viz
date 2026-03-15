@@ -19,7 +19,7 @@ body {
   top: 16px;
   right: 16px;
   z-index: 1000;
-  pointer-events: none;
+  pointer-events: auto;
   perspective: 300px;
 }
 
@@ -38,7 +38,11 @@ body {
     inset 0 0 8px rgba(255, 255, 255, 0.05);
   position: relative;
   transform-style: preserve-3d;
-  transition: transform 0.1s ease-out;
+  cursor: pointer;
+}
+
+.compass-ring:hover {
+  border-color: rgba(255, 255, 255, 0.55);
 }
 
 .compass-n,
@@ -104,6 +108,19 @@ body {
   margin-top: 4px;
 }
 
+/* ─── Camera HUD ─────────────────────────────────────────────────── */
+.camera-hud {
+  margin-top: 6px;
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* ─── Loading Overlay ────────────────────────────────────────────── */
 .loading-overlay {
   position: fixed;
@@ -156,6 +173,43 @@ body {
   font-family: system-ui, -apple-system, sans-serif;
   min-width: 200px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.data-panel-toggle {
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.data-panel-toggle:hover,
+.data-panel-toggle:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.data-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.data-panel.is-minimized {
+  min-width: 0;
+}
+
+.data-panel.is-minimized .data-panel-body {
+  display: none;
 }
 
 .data-panel-label {
