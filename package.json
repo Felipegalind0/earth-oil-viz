@@ -1,11 +1,11 @@
 {
-  "name": "earth-oil-viz",
+  "name": "foss-earth",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && cp -r dist/earth-oil-viz/cesium dist/cesium",
+    "build": "tsc && vite build && cp -r dist/foss-earth/cesium dist/cesium",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist",
     "test": "vitest run",

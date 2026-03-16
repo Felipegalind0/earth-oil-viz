@@ -1,65 +1,18 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <link rel="stylesheet" href="/earth-oil-viz/cesium/Widgets/widgets.css">
-    <script src="/earth-oil-viz/cesium/Cesium.js"></script>
+    <link rel="stylesheet" href="/foss-earth/cesium/Widgets/widgets.css">
+    <script src="/foss-earth/cesium/Cesium.js"></script>
 
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/earth-oil-viz/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/foss-earth/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Earth Oil Viz</title>
-    <script type="module" crossorigin src="/earth-oil-viz/assets/index-CWhEmR2r.js"></script>
-    <link rel="stylesheet" crossorigin href="/earth-oil-viz/assets/index-BpoI_AIr.css">
+    <title>FOSS Earth</title>
+    <script type="module" crossorigin src="/foss-earth/assets/index-DJeRzmR3.js"></script>
+    <link rel="stylesheet" crossorigin href="/foss-earth/assets/index-BpoI_AIr.css">
   </head>
   <body>
     <div id="cesiumContainer"></div>
-
-    <!-- Loading overlay -->
-    <div id="loadingOverlay" class="loading-overlay" style="display: none">
-      <div class="loading-spinner"></div>
-      <p class="loading-text">Loading oil trade data…</p>
-    </div>
-
-    <!-- Dataset Selector Panel -->
-    <div id="dataPanel" class="data-panel is-minimized">
-      <button
-        id="dataPanelToggle"
-        class="data-panel-toggle"
-        type="button"
-        aria-expanded="false"
-        aria-controls="dataPanelBody"
-      >
-        Show Data Overlay
-      </button>
-      <div id="dataPanelBody" class="data-panel-body">
-        <label class="data-panel-label" for="datasetSelect">Dataset</label>
-        <select id="datasetSelect" class="data-panel-select">
-          <option value="all">Crude Oil — All Flows (468)</option>
-          <option value="top50">Crude Oil — Top 50 Flows</option>
-          <option value="top30">Crude Oil — Top 30 Flows</option>
-          <option value="middle_east">Middle East Exports</option>
-          <option value="americas">Americas Exports</option>
-          <option value="africa">Africa Exports</option>
-          <option value="europe">Europe Exports</option>
-          <option value="russia_cis">Russia &amp; CIS Exports</option>
-        </select>
-        <label class="data-panel-label" for="routeScenarioSelect">Routing Scenario</label>
-        <select id="routeScenarioSelect" class="data-panel-select">
-          <option value="baseline">Baseline</option>
-          <option value="suez_closed">Suez Closed</option>
-          <option value="panama_constrained">Panama Constrained</option>
-          <option value="hormuz_high_risk">Hormuz High Risk</option>
-        </select>
-        <div class="data-panel-scenario">
-          <span class="data-panel-source-heading">Scenario Effect</span>
-          <span id="routeScenarioDescription">Normal corridor costs with all major chokepoints open.</span>
-        </div>
-        <div class="data-panel-source">
-          <span class="data-panel-source-heading">Source</span>
-          <span id="dataSourceText">Harvard Atlas of Economic Complexity / UN Comtrade — SITC 3330 crude petroleum (2023)</span>
-        </div>
-      </div>
-    </div>
 
     <div id="compassWidget" class="camera-hud-panel">
       <button id="cameraResetButton" class="camera-reset-button" type="button">

@@ -3,7 +3,12 @@
 // Cost: one normalize + one dot per entity per frame — extremely fast.
 
 import * as Cesium from "cesium";
-import type { RenderedLane } from "./visualization/seaLanes";
+
+/** Any polyline entity with [lat, lon] sample points — generic interface for culling. */
+export interface CullablePolyline {
+  entity: Cesium.Entity;
+  points: [number, number][];
+}
 
 // Scratch vectors (reused every frame, zero allocation)
 const scratchCam = new Cesium.Cartesian3();
@@ -17,7 +22,7 @@ const HORIZON_MARGIN = 0.03;
 
 export interface CullableSet {
   spheres: Cesium.Entity[];
-  lanes: RenderedLane[];
+  lanes: CullablePolyline[];
   /** Precomputed unit-sphere positions for spheres (parallel array) */
   sphereNormals: Cesium.Cartesian3[];
   /** Precomputed start normals for lanes (parallel array) */
@@ -34,7 +39,7 @@ export interface CullableSet {
  */
 export function buildCullableSet(
   spheres: Cesium.Entity[],
-  lanes: RenderedLane[],
+  lanes: CullablePolyline[],
 ): CullableSet {
   // Sphere normals from their static positions
   const sphereNormals = spheres.map((e) => {

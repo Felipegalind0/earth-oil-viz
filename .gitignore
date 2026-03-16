@@ -6,3 +6,4 @@ secrets.md
 # Raw data files (too large to commit — see README for download instructions)
 PET.txt
 *.csv
+_oil-archive/
