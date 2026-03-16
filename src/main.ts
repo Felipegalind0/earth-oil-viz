@@ -14,7 +14,6 @@ import { createOrbitCompass } from "./visualization/orbitCompass";
 import { buildCullableSet, updateCulling } from "./culling";
 import type { CullableSet } from "./culling";
 import {
-  classifyTwoPointGestureIntent,
   compensateInvertedHeading,
   computeTwoPointGestureMetrics,
 } from "./mathUtils";
@@ -551,15 +550,12 @@ if (supportsSafariGestureEvents) {
   }) as EventListener, { passive: false } as AddEventListenerOptions);
 }
 
-// Touchscreen fallback: classify two-finger pinch vs twist and only take
-// control when the gesture is clearly a heading rotation.
+// Touchscreen fallback: own all two-finger touch input directly.
+// Apply centroid translation as orbit and finger distance changes as zoom.
 type ActiveTouchPoint = { x: number; y: number };
-type TouchGestureIntent = "swipe" | "pinch" | null;
 
 interface TouchGestureSession {
-  startMetrics: ReturnType<typeof computeTwoPointGestureMetrics>;
   previousMetrics: ReturnType<typeof computeTwoPointGestureMetrics>;
-  intent: TouchGestureIntent;
   controlsSuspended: boolean;
 }
 
@@ -600,7 +596,6 @@ function clearTouchGestureSession(reason: string): void {
   resumeTouchControllerInputs();
   if (touchGestureSession) {
     logGesture(`touch gesture session cleared: ${reason}`, {
-      intent: touchGestureSession.intent,
       activePointers: activePointers.size,
     });
   }
@@ -617,11 +612,10 @@ canvas.addEventListener("pointerdown", (e: PointerEvent) => {
     const metrics = getCurrentTouchMetrics();
     if (metrics) {
       touchGestureSession = {
-        startMetrics: metrics,
         previousMetrics: metrics,
-        intent: null,
         controlsSuspended: false,
       };
+      suspendTouchControllerInputs();
       logGesture("touch gesture session started", metrics);
     }
   } else if (activePointers.size > 2) {
@@ -641,35 +635,15 @@ canvas.addEventListener("pointermove", (e: PointerEvent) => {
   const metrics = getCurrentTouchMetrics();
   if (!metrics) return;
 
-  if (touchGestureSession.intent === null) {
-    const centroidTranslationPx = Math.hypot(
-      metrics.centroidX - touchGestureSession.startMetrics.centroidX,
-      metrics.centroidY - touchGestureSession.startMetrics.centroidY,
-    );
-    const scaleRatio = metrics.distancePx / touchGestureSession.startMetrics.distancePx;
-    const intent = classifyTwoPointGestureIntent(centroidTranslationPx, scaleRatio);
+  e.preventDefault();
+  const dx = metrics.centroidX - touchGestureSession.previousMetrics.centroidX;
+  const dy = metrics.centroidY - touchGestureSession.previousMetrics.centroidY;
+  const distanceDeltaPx = metrics.distancePx - touchGestureSession.previousMetrics.distancePx;
+  const TOUCH_SWIPE_DEG_PER_PX = 0.15;
+  const TOUCH_SWIPE_DEADZONE_PX = 0.75;
+  const TOUCH_PINCH_DEADZONE_PX = 1.5;
 
-    if (intent === "swipe") {
-      touchGestureSession.intent = intent;
-      suspendTouchControllerInputs();
-      e.preventDefault();
-      logGesture("two-finger swipe detected", { centroidTranslationPx, scaleRatio });
-    } else if (intent === "pinch") {
-      touchGestureSession.intent = intent;
-      suspendTouchControllerInputs();
-      e.preventDefault();
-      logGesture("two-finger pinch detected", { centroidTranslationPx, scaleRatio });
-    }
-
-    touchGestureSession.previousMetrics = metrics;
-    return;
-  }
-
-  if (touchGestureSession.intent === "swipe") {
-    e.preventDefault();
-    const dx = metrics.centroidX - touchGestureSession.previousMetrics.centroidX;
-    const dy = metrics.centroidY - touchGestureSession.previousMetrics.centroidY;
-    const TOUCH_SWIPE_DEG_PER_PX = 0.15;
+  if (Math.abs(dx) >= TOUCH_SWIPE_DEADZONE_PX || Math.abs(dy) >= TOUCH_SWIPE_DEADZONE_PX) {
     orbitCameraAroundTarget(
       Cesium.Math.toRadians(dy * TOUCH_SWIPE_DEG_PER_PX),
       Cesium.Math.toRadians(dx * TOUCH_SWIPE_DEG_PER_PX),
@@ -677,8 +651,7 @@ canvas.addEventListener("pointermove", (e: PointerEvent) => {
     logGesture("applied swipe orbit delta", { dx, dy });
   }
 
-  if (touchGestureSession.intent === "pinch") {
-    e.preventDefault();
+  if (Math.abs(distanceDeltaPx) >= TOUCH_PINCH_DEADZONE_PX) {
     const scaleDelta = metrics.distancePx / touchGestureSession.previousMetrics.distancePx;
     const height = viewer.camera.positionCartographic.height;
     if (scaleDelta > 1) {
@@ -686,7 +659,7 @@ canvas.addEventListener("pointermove", (e: PointerEvent) => {
     } else if (scaleDelta < 1) {
       viewer.camera.zoomOut(height * (1 - scaleDelta) * 0.5);
     }
-    logGesture("applied pinch zoom delta", { scaleDelta });
+    logGesture("applied pinch zoom delta", { scaleDelta, distanceDeltaPx });
   }
 
   touchGestureSession.previousMetrics = metrics;
