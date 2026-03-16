@@ -13,112 +13,134 @@ body {
   height: 100vh;
 }
 
-/* ─── 3D Compass Widget ──────────────────────────────────────────── */
+#cesiumContainer,
+#cesiumContainer canvas {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ─── Camera HUD Panel ───────────────────────────────────────────── */
 #compassWidget {
   position: fixed;
   top: 16px;
   right: 16px;
   z-index: 1000;
   pointer-events: auto;
-  perspective: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
 }
 
-.compass-ring {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  background: radial-gradient(
-    circle,
-    rgba(20, 20, 30, 0.85) 0%,
-    rgba(10, 10, 18, 0.92) 100%
-  );
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.5),
-    inset 0 0 8px rgba(255, 255, 255, 0.05);
-  position: relative;
-  transform-style: preserve-3d;
-  cursor: pointer;
-}
-
-.compass-ring:hover {
-  border-color: rgba(255, 255, 255, 0.55);
-}
-
-.compass-n,
-.compass-e,
-.compass-s,
-.compass-w {
-  position: absolute;
+.camera-reset-button {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(12, 16, 24, 0.8);
+  color: rgba(255, 255, 255, 0.82);
   font-family: system-ui, -apple-system, sans-serif;
   font-weight: 700;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 8px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
-.compass-n {
-  top: 4px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: #ef4444;
-}
-
-.compass-s {
-  bottom: 4px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.compass-e {
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.compass-w {
-  left: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.compass-needle {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 6px;
-  height: 44px;
-  transform: translate(-50%, -50%);
-}
-
-.needle-north {
-  width: 0;
-  height: 0;
-  border-left: 3px solid transparent;
-  border-right: 3px solid transparent;
-  border-bottom: 20px solid #ef4444;
-}
-
-.needle-south {
-  width: 0;
-  height: 0;
-  border-left: 3px solid transparent;
-  border-right: 3px solid transparent;
-  border-top: 20px solid rgba(255, 255, 255, 0.45);
-  margin-top: 4px;
+.camera-reset-button:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(20, 26, 36, 0.9);
 }
 
 /* ─── Camera HUD ─────────────────────────────────────────────────── */
 .camera-hud {
-  margin-top: 6px;
+  padding: 10px 12px;
   font-family: "SF Mono", "Menlo", "Monaco", monospace;
   font-size: 10px;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.68);
   text-align: center;
   white-space: nowrap;
-  pointer-events: none;
   user-select: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(10, 14, 22, 0.72);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.camera-hud-grid {
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.camera-hud-row {
+  display: grid;
+  gap: 6px;
+}
+
+.camera-hud-row-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.camera-hud-row-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.camera-hud-value {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.8);
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  border-radius: 8px;
+  padding: 6px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+
+.camera-hud-value:hover,
+.camera-hud-value:focus-visible {
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.13);
+  color: rgba(255, 255, 255, 0.95);
+  outline: none;
+}
+
+.camera-hud-value.is-editing {
+  border-color: rgba(128, 210, 255, 0.65);
+  background: rgba(44, 122, 163, 0.35);
+}
+
+.camera-hud-value[data-invalid="true"] {
+  border-color: rgba(255, 106, 106, 0.9);
+  background: rgba(150, 34, 34, 0.38);
+}
+
+.camera-hud-input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.96);
+  font: inherit;
+  font-size: 10px;
+  text-align: center;
+  padding: 0;
+}
+
+.camera-hud-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 /* ─── Loading Overlay ────────────────────────────────────────────── */

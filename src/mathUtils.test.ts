@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  classifyTwoPointGestureIntent,
+  computeSurfaceRelativePitchDeg,
+  computeTwoPointGestureMetrics,
   shortestAngleDeltaDeg,
   compensateInvertedHeading,
-  compassTilt,
+  normalizeAngleDeltaRad,
 } from "./mathUtils";
 
 // ─── shortestAngleDeltaDeg ──────────────────────────────────────────
@@ -41,6 +44,72 @@ describe("shortestAngleDeltaDeg", () => {
   });
 });
 
+// ─── normalizeAngleDeltaRad ────────────────────────────────────────
+describe("normalizeAngleDeltaRad", () => {
+  it("returns 0 for identical angles", () => {
+    expect(normalizeAngleDeltaRad(1.5, 1.5)).toBe(0);
+  });
+
+  it("wraps clockwise across the -pi/pi seam", () => {
+    expect(normalizeAngleDeltaRad((350 * Math.PI) / 180, (10 * Math.PI) / 180)).toBeCloseTo((20 * Math.PI) / 180);
+  });
+
+  it("wraps counter-clockwise across the -pi/pi seam", () => {
+    expect(normalizeAngleDeltaRad((10 * Math.PI) / 180, (350 * Math.PI) / 180)).toBeCloseTo((-20 * Math.PI) / 180);
+  });
+
+  it("returns -pi for the ambiguous half-turn", () => {
+    expect(normalizeAngleDeltaRad(0, Math.PI)).toBe(-Math.PI);
+  });
+});
+
+// ─── computeTwoPointGestureMetrics ────────────────────────────────
+describe("computeTwoPointGestureMetrics", () => {
+  it("computes angle, distance, and centroid", () => {
+    const metrics = computeTwoPointGestureMetrics({ x: 10, y: 20 }, { x: 22, y: 36 });
+
+    expect(metrics.angleRad).toBeCloseTo(Math.atan2(16, 12));
+    expect(metrics.distancePx).toBeCloseTo(20);
+    expect(metrics.centroidX).toBe(16);
+    expect(metrics.centroidY).toBe(28);
+  });
+});
+
+// ─── classifyTwoPointGestureIntent ────────────────────────────────
+describe("classifyTwoPointGestureIntent", () => {
+  it("recognizes twist intent when rotation dominates", () => {
+    expect(classifyTwoPointGestureIntent(0.09, 1.01)).toBe("twist");
+  });
+
+  it("recognizes pinch intent when scale dominates", () => {
+    expect(classifyTwoPointGestureIntent(0.01, 1.14)).toBe("pinch");
+  });
+
+  it("returns null while intent is still ambiguous", () => {
+    expect(classifyTwoPointGestureIntent(0.02, 1.02)).toBeNull();
+  });
+});
+
+// ─── computeSurfaceRelativePitchDeg ───────────────────────────────
+describe("computeSurfaceRelativePitchDeg", () => {
+  it("returns 90 when looking straight down at the surface", () => {
+    expect(computeSurfaceRelativePitchDeg(-1)).toBeCloseTo(90);
+  });
+
+  it("returns 0 at the horizon", () => {
+    expect(computeSurfaceRelativePitchDeg(0)).toBeCloseTo(0);
+  });
+
+  it("returns negative values when looking away from the globe", () => {
+    expect(computeSurfaceRelativePitchDeg(1)).toBeCloseTo(-90);
+  });
+
+  it("clamps minor floating point overshoot", () => {
+    expect(computeSurfaceRelativePitchDeg(-1.2)).toBeCloseTo(90);
+    expect(computeSurfaceRelativePitchDeg(1.2)).toBeCloseTo(-90);
+  });
+});
+
 // ─── compensateInvertedHeading ──────────────────────────────────────
 describe("compensateInvertedHeading", () => {
   it("returns heading unchanged when not looking away", () => {
@@ -64,48 +133,3 @@ describe("compensateInvertedHeading", () => {
   });
 });
 
-// ─── compassTilt ────────────────────────────────────────────────────
-describe("compassTilt", () => {
-  const EPS = 0.01;
-
-  it("returns [0, 0] at top-down view (pitch = -90°)", () => {
-    const [tx, ty] = compassTilt(-90, 0);
-    expect(tx).toBeCloseTo(0, 5);
-    expect(ty).toBeCloseTo(0, 5);
-  });
-
-  it("tilts on X axis only when heading is 0° (facing north)", () => {
-    const [tx, ty] = compassTilt(0, 0); // pitch = 0° = horizon
-    expect(tx).toBeCloseTo(60, EPS); // max tilt
-    expect(ty).toBeCloseTo(0, EPS);
-  });
-
-  it("tilts on -Y axis only when heading is 90° (facing east)", () => {
-    const [tx, ty] = compassTilt(0, 90);
-    expect(Math.abs(tx)).toBeLessThan(0.01);
-    expect(ty).toBeCloseTo(-60, EPS);
-  });
-
-  it("tilts on -X axis when heading is 180° (facing south)", () => {
-    const [tx, ty] = compassTilt(0, 180);
-    expect(tx).toBeCloseTo(-60, EPS);
-    expect(Math.abs(ty)).toBeLessThan(0.01);
-  });
-
-  it("tilts on +Y axis when heading is 270° (facing west)", () => {
-    const [tx, ty] = compassTilt(0, 270);
-    expect(Math.abs(tx)).toBeLessThan(0.01);
-    expect(ty).toBeCloseTo(60, EPS);
-  });
-
-  it("scales tilt magnitude linearly with pitch", () => {
-    const [txHalf] = compassTilt(-45, 0); // halfway between -90 and 0
-    expect(txHalf).toBeCloseTo(30, EPS); // half of 60
-  });
-
-  it("clamps pitch above horizon (positive pitch)", () => {
-    // pitch = 10° should still clamp to 90° from nadir → full 60° tilt
-    const [tx] = compassTilt(10, 0);
-    expect(tx).toBeCloseTo(60, EPS);
-  });
-});

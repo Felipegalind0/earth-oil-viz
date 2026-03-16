@@ -10,9 +10,15 @@ import { ROUTE_SCENARIOS } from "./data/seaRoutes";
 import type { RouteScenarioId } from "./data/seaRoutes";
 import { createCountrySpheres } from "./visualization/regionSpheres";
 import { createSeaLanes } from "./visualization/seaLanes";
+import { createOrbitCompass } from "./visualization/orbitCompass";
 import { buildCullableSet, updateCulling } from "./culling";
 import type { CullableSet } from "./culling";
-import { shortestAngleDeltaDeg, compensateInvertedHeading, compassTilt } from "./mathUtils";
+import {
+  classifyTwoPointGestureIntent,
+  compensateInvertedHeading,
+  computeTwoPointGestureMetrics,
+  normalizeAngleDeltaRad,
+} from "./mathUtils";
 
 // ─── Read API key from URL params ───────────────────────────────────
 const params = new URLSearchParams(window.location.search);
@@ -30,6 +36,29 @@ const viewer = new Cesium.Viewer("cesiumContainer", {
   fullscreenButton: false,
 });
 
+const orbitCompass = createOrbitCompass(viewer);
+const MIN_CAMERA_PITCH_RAD = Cesium.Math.toRadians(-90);
+const MAX_CAMERA_PITCH_RAD = Cesium.Math.toRadians(-1);
+const debugGestures = params.has("debug-gestures");
+const userAgent = navigator.userAgent;
+const isAppleMobileBrowser = /iPhone|iPad|iPod/i.test(userAgent);
+const supportsSafariGestureEvents =
+  "GestureEvent" in window
+  && /Safari/i.test(userAgent)
+  && !isAppleMobileBrowser
+  && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|OPR|Android/i.test(userAgent);
+
+function logGesture(message: string, payload?: unknown): void {
+  if (!debugGestures) return;
+
+  if (payload === undefined) {
+    console.log(`[gestures] ${message}`);
+    return;
+  }
+
+  console.log(`[gestures] ${message}`, payload);
+}
+
 // ─── Cross-browser Trackpad Fixes ───────────────────────────────────
 // Prevent page scroll on wheel (Firefox/Chrome)
 document.addEventListener("wheel", (e) => e.preventDefault(), { passive: false });
@@ -45,6 +74,7 @@ ctrl.inertiaSpin = 0.9;
 ctrl.inertiaTranslate = 0.9;
 ctrl.inertiaZoom = 0.9;
 ctrl.maximumMovementRatio = 0.2;
+ctrl.maximumTiltAngle = Cesium.Math.PI_OVER_TWO + MAX_CAMERA_PITCH_RAD;
 
 // Remove default imagery (will be replaced below)
 viewer.imageryLayers.removeAll();
@@ -154,6 +184,7 @@ function buildVisualization(flows: TradeFlow[]) {
 const sphereEntities = createCountrySpheres(viewer);
 const waypointEntitySet = new Set(sphereEntities);
 let hadWaypointSelection = false;
+let suppressCompassSelectionClear = false;
 
 function isWaypointEntity(entity: Cesium.Entity | undefined): boolean {
   return entity !== undefined && waypointEntitySet.has(entity);
@@ -180,6 +211,17 @@ function exitWaypointPoiMode(clearSelection: boolean): void {
 }
 
 viewer.selectedEntityChanged.addEventListener((entity) => {
+  if (suppressCompassSelectionClear && !entity) {
+    suppressCompassSelectionClear = false;
+    return;
+  }
+
+  if (orbitCompass.isEntity(entity)) {
+    suppressCompassSelectionClear = true;
+    viewer.selectedEntity = undefined;
+    return;
+  }
+
   if (isWaypointEntity(entity)) {
     hadWaypointSelection = true;
     return;
@@ -278,6 +320,8 @@ let isTrackpad = false;
 const canvas = viewer.scene.canvas;
 const scratchScreenCenter = new Cesium.Cartesian2();
 const scratchOrbitTransform = new Cesium.Matrix4();
+const scratchWaypointPosition = new Cesium.Cartesian3();
+const scratchSurfaceAnchor = new Cesium.Cartesian3();
 let lastOrbitTarget: Cesium.Cartesian3 | null = null;
 
 function getOrbitTargetAtScreenCenter(): Cesium.Cartesian3 | null {
@@ -302,7 +346,73 @@ function getOrbitTargetAtScreenCenter(): Cesium.Cartesian3 | null {
   return lastOrbitTarget;
 }
 
+function projectToGlobeSurface(position: Cesium.Cartesian3): Cesium.Cartesian3 {
+  return viewer.scene.globe.ellipsoid.scaleToGeodeticSurface(position, scratchSurfaceAnchor)
+    ?? Cesium.Cartesian3.clone(position, scratchSurfaceAnchor);
+}
+
+function getWaypointOrbitTarget(): Cesium.Cartesian3 | null {
+  const waypointEntity = isWaypointEntity(viewer.trackedEntity)
+    ? viewer.trackedEntity
+    : undefined;
+
+  if (!waypointEntity?.position) return null;
+
+  const position = waypointEntity.position.getValue(viewer.clock.currentTime, scratchWaypointPosition);
+  return position ? projectToGlobeSurface(position) : null;
+}
+
+function resolveCompassAnchor(): Cesium.Cartesian3 | null {
+  return getWaypointOrbitTarget() ?? getOrbitTargetAtScreenCenter();
+}
+
+function clampCameraPitch(): number {
+  const clampedPitch = Cesium.Math.clamp(viewer.camera.pitch, MIN_CAMERA_PITCH_RAD, MAX_CAMERA_PITCH_RAD);
+
+  if (Math.abs(clampedPitch - viewer.camera.pitch) > 0.0001) {
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
+      orientation: {
+        heading: viewer.camera.heading,
+        pitch: clampedPitch,
+        roll: 0,
+      },
+    });
+  }
+
+  return clampedPitch;
+}
+
+function formatZoomDistance(distanceMeters: number): string {
+  if (distanceMeters >= 1_000_000) {
+    return `${(distanceMeters / 1_000_000).toFixed(2)}M m`;
+  }
+
+  if (distanceMeters >= 1_000) {
+    return `${(distanceMeters / 1_000).toFixed(0)} km`;
+  }
+
+  return `${distanceMeters.toFixed(0)} m`;
+}
+
 function orbitCameraAroundTarget(pitchDeltaRad: number, headingDeltaRad = 0): void {
+  // Clamp against world pitch before entering the local ENU orbit frame.
+  const currentWorldPitch = viewer.camera.pitch;
+  const maxUp = MAX_CAMERA_PITCH_RAD - currentWorldPitch;
+  const maxDown = MIN_CAMERA_PITCH_RAD - currentWorldPitch;
+  const clampedPitchDeltaRad = Cesium.Math.clamp(pitchDeltaRad, maxDown, maxUp);
+  const effectiveHeadingDeltaRad = Math.abs(headingDeltaRad) >= Cesium.Math.toRadians(0.02)
+    ? headingDeltaRad
+    : 0;
+  const effectivePitchDeltaRad = Math.abs(clampedPitchDeltaRad) >= Cesium.Math.toRadians(0.02)
+    ? clampedPitchDeltaRad
+    : 0;
+
+  // Avoid repicking/reframing when nothing meaningful can be applied.
+  if (effectiveHeadingDeltaRad === 0 && effectivePitchDeltaRad === 0) {
+    return;
+  }
+
   const target = getOrbitTargetAtScreenCenter();
   if (!target) return;
 
@@ -312,11 +422,11 @@ function orbitCameraAroundTarget(pitchDeltaRad: number, headingDeltaRad = 0): vo
 
   const orbitTransform = Cesium.Transforms.eastNorthUpToFixedFrame(target, undefined, scratchOrbitTransform);
   viewer.camera.lookAtTransform(orbitTransform);
-  if (headingDeltaRad !== 0) {
-    viewer.camera.rotateRight(headingDeltaRad);
+  if (effectiveHeadingDeltaRad !== 0) {
+    viewer.camera.rotateRight(effectiveHeadingDeltaRad);
   }
-  if (pitchDeltaRad !== 0) {
-    viewer.camera.rotateUp(pitchDeltaRad);
+  if (effectivePitchDeltaRad !== 0) {
+    viewer.camera.rotateUp(effectivePitchDeltaRad);
   }
   viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
 
@@ -325,7 +435,7 @@ function orbitCameraAroundTarget(pitchDeltaRad: number, headingDeltaRad = 0): vo
     destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
     orientation: {
       heading: viewer.camera.heading,
-      pitch: viewer.camera.pitch,
+      pitch: Cesium.Math.clamp(viewer.camera.pitch, MIN_CAMERA_PITCH_RAD, MAX_CAMERA_PITCH_RAD),
       roll: 0,
     },
   });
@@ -350,7 +460,7 @@ canvas.addEventListener(
     if (e.ctrlKey) {
       // Pinch-to-zoom (Chrome/Firefox send ctrlKey+wheel for trackpad pinch)
       // Safari handles this via gesturechange above, so skip if GestureEvent exists
-      if (!("GestureEvent" in window)) {
+      if (!supportsSafariGestureEvents) {
         const zoomFraction = -e.deltaY * 0.01;
         const height = viewer.camera.positionCartographic.height;
         if (zoomFraction > 0) {
@@ -364,9 +474,11 @@ canvas.addEventListener(
       // vertical motion: pitch orbit, horizontal motion: heading orbit
       const pitchDelta = e.deltaY * 0.15;
       const headingDelta = e.deltaX * 0.15;
+      const pitchDeltaRad = Cesium.Math.toRadians(pitchDelta);
+      const headingDeltaRad = Cesium.Math.toRadians(headingDelta);
       orbitCameraAroundTarget(
-        Cesium.Math.toRadians(pitchDelta),
-        Cesium.Math.toRadians(headingDelta),
+        Math.abs(pitchDeltaRad) >= Cesium.Math.toRadians(0.02) ? pitchDeltaRad : 0,
+        Math.abs(headingDeltaRad) >= Cesium.Math.toRadians(0.02) ? headingDeltaRad : 0,
       );
     } else if (isTrackpad) {
       // Two-finger swipe → orbit (rotate around the globe like click-drag)
@@ -383,6 +495,7 @@ canvas.addEventListener(
       camera.rotateRight(Cesium.Math.toRadians(dx));
       camera.rotateUp(Cesium.Math.toRadians(dy));
       camera.constrainedAxis = savedAxis;
+      clampCameraPitch();
     } else {
       // Regular mouse scroll wheel → zoom
       const zoomAmount = e.deltaY;
@@ -401,7 +514,7 @@ canvas.addEventListener(
 // For actual touchscreens, we fall back to pointer events.
 
 // Safari gesture events (macOS trackpad rotation + pinch zoom)
-if ("GestureEvent" in window) {
+if (supportsSafariGestureEvents) {
   let lastGestureRotation = 0;
   let lastGestureScale = 1;
 
@@ -439,91 +552,374 @@ if ("GestureEvent" in window) {
   }) as EventListener, { passive: false } as AddEventListenerOptions);
 }
 
-// Touchscreen fallback: track two pointers and compute rotation delta
-const activePointers = new Map<number, { x: number; y: number }>();
-let prevAngle: number | null = null;
+// Touchscreen fallback: classify two-finger pinch vs twist and only take
+// control when the gesture is clearly a heading rotation.
+type ActiveTouchPoint = { x: number; y: number };
+type TouchGestureIntent = "twist" | "pinch" | null;
 
-function getAngle(): number | null {
-  const pts = Array.from(activePointers.values());
-  if (pts.length < 2) return null;
-  return Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+interface TouchGestureSession {
+  startMetrics: ReturnType<typeof computeTwoPointGestureMetrics>;
+  previousMetrics: ReturnType<typeof computeTwoPointGestureMetrics>;
+  intent: TouchGestureIntent;
+  controlsSuspended: boolean;
+}
+
+const activePointers = new Map<number, ActiveTouchPoint>();
+let touchGestureSession: TouchGestureSession | null = null;
+
+function getSortedTouchPoints(): [ActiveTouchPoint, ActiveTouchPoint] | null {
+  if (activePointers.size !== 2) return null;
+
+  const sortedEntries = Array.from(activePointers.entries())
+    .sort(([leftId], [rightId]) => leftId - rightId)
+    .map(([, point]) => point);
+
+  return [sortedEntries[0], sortedEntries[1]];
+}
+
+function getCurrentTouchMetrics() {
+  const points = getSortedTouchPoints();
+  if (!points) return null;
+  return computeTwoPointGestureMetrics(points[0], points[1]);
+}
+
+function suspendTouchControllerInputs(): void {
+  if (!touchGestureSession || touchGestureSession.controlsSuspended) return;
+  controller.enableInputs = false;
+  touchGestureSession.controlsSuspended = true;
+  logGesture("touch controller inputs suspended");
+}
+
+function resumeTouchControllerInputs(): void {
+  if (!touchGestureSession?.controlsSuspended) return;
+  controller.enableInputs = true;
+  touchGestureSession.controlsSuspended = false;
+  logGesture("touch controller inputs resumed");
+}
+
+function clearTouchGestureSession(reason: string): void {
+  resumeTouchControllerInputs();
+  if (touchGestureSession) {
+    logGesture(`touch gesture session cleared: ${reason}`, {
+      intent: touchGestureSession.intent,
+      activePointers: activePointers.size,
+    });
+  }
+  touchGestureSession = null;
 }
 
 canvas.addEventListener("pointerdown", (e: PointerEvent) => {
   if (e.pointerType !== "touch") return;
+
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  canvas.setPointerCapture(e.pointerId);
+
   if (activePointers.size === 2) {
-    prevAngle = getAngle();
+    const metrics = getCurrentTouchMetrics();
+    if (metrics) {
+      touchGestureSession = {
+        startMetrics: metrics,
+        previousMetrics: metrics,
+        intent: null,
+        controlsSuspended: false,
+      };
+      logGesture("touch gesture session started", metrics);
+    }
+  } else if (activePointers.size > 2) {
+    clearTouchGestureSession("more than two touch points");
   }
 });
 
 canvas.addEventListener("pointermove", (e: PointerEvent) => {
   if (e.pointerType !== "touch" || !activePointers.has(e.pointerId)) return;
+
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (activePointers.size === 2 && prevAngle !== null) {
-    const angle = getAngle();
-    if (angle !== null) {
-      const delta = angle - prevAngle;
-      if (Math.abs(delta) > 0.003 && Math.abs(delta) < Math.PI) {
-        orbitCameraAroundTarget(0, -delta);
-      }
-      prevAngle = angle;
+
+  if (!touchGestureSession || activePointers.size !== 2) {
+    return;
+  }
+
+  const metrics = getCurrentTouchMetrics();
+  if (!metrics) return;
+
+  if (touchGestureSession.intent === null) {
+    const totalRotationRad = normalizeAngleDeltaRad(
+      touchGestureSession.startMetrics.angleRad,
+      metrics.angleRad,
+    );
+    const scaleRatio = metrics.distancePx / touchGestureSession.startMetrics.distancePx;
+    const intent = classifyTwoPointGestureIntent(totalRotationRad, scaleRatio);
+
+    if (intent === "twist") {
+      touchGestureSession.intent = intent;
+      suspendTouchControllerInputs();
+      e.preventDefault();
+      logGesture("two-finger twist detected", { totalRotationRad, scaleRatio });
+    } else if (intent === "pinch") {
+      touchGestureSession.intent = intent;
+      logGesture("two-finger pinch detected", { totalRotationRad, scaleRatio });
+    }
+
+    touchGestureSession.previousMetrics = metrics;
+    return;
+  }
+
+  if (touchGestureSession.intent === "twist") {
+    e.preventDefault();
+    const angleDelta = normalizeAngleDeltaRad(
+      touchGestureSession.previousMetrics.angleRad,
+      metrics.angleRad,
+    );
+
+    if (Math.abs(angleDelta) > 0.003) {
+      orbitCameraAroundTarget(0, -angleDelta);
+      logGesture("applied twist heading delta", { angleDelta });
     }
   }
-});
+
+  touchGestureSession.previousMetrics = metrics;
+}, { passive: false });
 
 function removePointer(e: PointerEvent) {
+  if (e.pointerType !== "touch") return;
+
   activePointers.delete(e.pointerId);
+  if (canvas.hasPointerCapture(e.pointerId)) {
+    canvas.releasePointerCapture(e.pointerId);
+  }
+
   if (activePointers.size < 2) {
-    prevAngle = null;
+    clearTouchGestureSession("touch count dropped below two");
   }
 }
 
 canvas.addEventListener("pointerup", removePointer);
 canvas.addEventListener("pointercancel", removePointer);
 
-// ─── 3D Compass Widget ─────────────────────────────────────────────
-const compassWidget = document.getElementById("compassWidget");
-const compassRing = document.querySelector<HTMLElement>(".compass-ring");
-let lastCompassHeadingDeg: number | null = null;
-let displayCompassHeadingDeg = 0;
+// ─── Camera HUD & Reset Control ───────────────────────────────────
+const cameraHud = document.getElementById("cameraHud");
+const cameraResetButton = document.getElementById("cameraResetButton");
 const scratchSurfaceNormal = new Cesium.Cartesian3();
+const MIN_CAMERA_PITCH_DISPLAY_DEG = -Cesium.Math.toDegrees(MAX_CAMERA_PITCH_RAD);
+const MAX_CAMERA_PITCH_DISPLAY_DEG = -Cesium.Math.toDegrees(MIN_CAMERA_PITCH_RAD);
 
-function updateCompass() {
-  if (!compassRing) return;
-  let headingDeg = Cesium.Math.toDegrees(
-    Cesium.Math.zeroToTwoPi(viewer.camera.heading),
-  );
+type CameraHudField = "lat" | "lon" | "heading" | "pitch" | "zoom";
 
-  const surfaceNormal = Cesium.Cartesian3.normalize(viewer.camera.positionWC, scratchSurfaceNormal);
-  const isLookingAwayFromGlobe = Cesium.Cartesian3.dot(viewer.camera.directionWC, surfaceNormal) > 0;
-  headingDeg = compensateInvertedHeading(headingDeg, isLookingAwayFromGlobe);
+type CameraHudSnapshot = {
+  latDeg: number;
+  lonDeg: number;
+  headingDeg: number;
+  pitchDeg: number;
+  zoomMeters: number;
+};
 
-  if (lastCompassHeadingDeg === null) {
-    lastCompassHeadingDeg = headingDeg;
-    displayCompassHeadingDeg = headingDeg;
-  } else {
-    displayCompassHeadingDeg += shortestAngleDeltaDeg(lastCompassHeadingDeg, headingDeg);
-    lastCompassHeadingDeg = headingDeg;
-  }
+type ActiveHudEditor = {
+  field: CameraHudField;
+  button: HTMLButtonElement;
+  input: HTMLInputElement;
+};
 
-  const pitch = Cesium.Math.toDegrees(viewer.camera.pitch);
+const hudButtons: Partial<Record<CameraHudField, HTMLButtonElement>> = {};
+let latestHudSnapshot: CameraHudSnapshot | null = null;
+let activeHudEditor: ActiveHudEditor | null = null;
 
-  const [tiltX, tiltY] = compassTilt(pitch, displayCompassHeadingDeg);
-  compassRing.style.transform = `rotateX(${tiltX}deg) rotateY(${tiltY}deg) rotateZ(${-displayCompassHeadingDeg}deg)`;
+function normalizeLongitudeDeg(lonDeg: number): number {
+  const wrapped = ((lonDeg + 180) % 360 + 360) % 360 - 180;
+  return wrapped;
 }
 
-viewer.clock.onTick.addEventListener(updateCompass);
-updateCompass();
+function formatLatitude(latDeg: number): string {
+  return `${Math.abs(latDeg).toFixed(1)}°${latDeg >= 0 ? "N" : "S"}`;
+}
 
-compassWidget?.addEventListener("click", () => {
-  // If in POI orbit mode, exit it first so flyTo isn't fighting the tracking transform
+function formatLongitude(lonDeg: number): string {
+  return `${Math.abs(lonDeg).toFixed(1)}°${lonDeg >= 0 ? "E" : "W"}`;
+}
+
+function parseDistanceMeters(raw: string): number | null {
+  const normalized = raw.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const kmMatch = normalized.match(/^(-?\d+(?:\.\d+)?)\s*km$/);
+  if (kmMatch) {
+    const valueKm = Number(kmMatch[1]);
+    return Number.isFinite(valueKm) ? valueKm * 1000 : null;
+  }
+
+  const mMatch = normalized.match(/^(-?\d+(?:\.\d+)?)\s*m$/);
+  if (mMatch) {
+    const valueM = Number(mMatch[1]);
+    return Number.isFinite(valueM) ? valueM : null;
+  }
+
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : null;
+}
+
+function applyCameraSnapshot(snapshot: CameraHudSnapshot): void {
+  const latDeg = Cesium.Math.clamp(snapshot.latDeg, -89.999, 89.999);
+  const lonDeg = normalizeLongitudeDeg(snapshot.lonDeg);
+  const headingDeg = ((snapshot.headingDeg % 360) + 360) % 360;
+  const pitchDeg = Cesium.Math.clamp(
+    snapshot.pitchDeg,
+    MIN_CAMERA_PITCH_DISPLAY_DEG,
+    MAX_CAMERA_PITCH_DISPLAY_DEG,
+  );
+  const zoomMeters = Math.max(50, snapshot.zoomMeters);
+  const target = Cesium.Cartesian3.fromDegrees(lonDeg, latDeg, 0);
+
+  viewer.trackedEntity = undefined;
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  viewer.camera.lookAt(
+    target,
+    new Cesium.HeadingPitchRange(
+      Cesium.Math.toRadians(headingDeg),
+      Cesium.Math.toRadians(-pitchDeg),
+      zoomMeters,
+    ),
+  );
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  clampCameraPitch();
+}
+
+function getHudFieldEditValue(field: CameraHudField, snapshot: CameraHudSnapshot): string {
+  if (field === "lat") return snapshot.latDeg.toFixed(4);
+  if (field === "lon") return snapshot.lonDeg.toFixed(4);
+  if (field === "heading") return snapshot.headingDeg.toFixed(2);
+  if (field === "pitch") return snapshot.pitchDeg.toFixed(2);
+  return snapshot.zoomMeters.toFixed(0);
+}
+
+function parseHudFieldValue(field: CameraHudField, raw: string): number | null {
+  if (field === "zoom") {
+    return parseDistanceMeters(raw);
+  }
+
+  const parsed = Number(raw.trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function applyHudFieldValue(field: CameraHudField, value: number): void {
+  if (!latestHudSnapshot) return;
+
+  const next: CameraHudSnapshot = { ...latestHudSnapshot };
+  if (field === "lat") next.latDeg = value;
+  if (field === "lon") next.lonDeg = value;
+  if (field === "heading") next.headingDeg = value;
+  if (field === "pitch") next.pitchDeg = value;
+  if (field === "zoom") next.zoomMeters = value;
+  applyCameraSnapshot(next);
+}
+
+function endHudInlineEdit(): void {
+  if (!activeHudEditor) return;
+  activeHudEditor.button.classList.remove("is-editing");
+  activeHudEditor.button.removeAttribute("data-invalid");
+  activeHudEditor = null;
+}
+
+function beginHudInlineEdit(field: CameraHudField): void {
+  if (!latestHudSnapshot) return;
+
+  const button = hudButtons[field];
+  if (!button) return;
+
+  if (activeHudEditor?.field === field) {
+    activeHudEditor.input.focus();
+    activeHudEditor.input.select();
+    return;
+  }
+
+  endHudInlineEdit();
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "camera-hud-input";
+  input.value = getHudFieldEditValue(field, latestHudSnapshot);
+  input.spellcheck = false;
+  input.autocomplete = "off";
+  input.autocapitalize = "off";
+  input.setAttribute("aria-label", `Edit ${field}`);
+
+  button.classList.add("is-editing");
+  button.replaceChildren(input);
+  activeHudEditor = { field, button, input };
+
+  const cancelEdit = () => {
+    endHudInlineEdit();
+  };
+
+  const commitEdit = () => {
+    if (!activeHudEditor || activeHudEditor.field !== field) return;
+    const parsed = parseHudFieldValue(field, input.value);
+    if (parsed === null) {
+      button.setAttribute("data-invalid", "true");
+      input.focus();
+      input.select();
+      return;
+    }
+
+    applyHudFieldValue(field, parsed);
+    endHudInlineEdit();
+  };
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitEdit();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelEdit();
+    }
+  });
+
+  input.addEventListener("blur", () => {
+    commitEdit();
+  });
+
+  input.focus();
+  input.select();
+}
+
+function ensureInteractiveCameraHud(): void {
+  if (!(cameraHud instanceof HTMLElement)) return;
+  if (cameraHud.dataset.mode === "interactive") return;
+
+  cameraHud.dataset.mode = "interactive";
+  cameraHud.classList.add("camera-hud-grid");
+  cameraHud.innerHTML = `
+    <div class="camera-hud-row camera-hud-row-2">
+      <button type="button" class="camera-hud-value" data-field="lat">LAT --</button>
+      <button type="button" class="camera-hud-value" data-field="lon">LON --</button>
+    </div>
+    <div class="camera-hud-row camera-hud-row-3">
+      <button type="button" class="camera-hud-value" data-field="heading">H --</button>
+      <button type="button" class="camera-hud-value" data-field="pitch">P --</button>
+      <button type="button" class="camera-hud-value" data-field="zoom">Z --</button>
+    </div>
+  `;
+
+  const fields: CameraHudField[] = ["lat", "lon", "heading", "pitch", "zoom"];
+  for (const field of fields) {
+    const button = cameraHud.querySelector<HTMLButtonElement>(`button[data-field="${field}"]`);
+    if (!button) continue;
+    hudButtons[field] = button;
+    button.title = "Click to edit; Enter to apply, Esc to cancel";
+    button.addEventListener("click", () => beginHudInlineEdit(field));
+  }
+}
+
+function resetCameraToNorthUp(): void {
   if (hadWaypointSelection || viewer.trackedEntity) {
     viewer.trackedEntity = undefined;
     viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
     viewer.selectedEntity = undefined;
     hadWaypointSelection = false;
   }
+
   viewer.camera.flyTo({
     destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
     orientation: {
@@ -533,10 +929,75 @@ compassWidget?.addEventListener("click", () => {
     },
     duration: 0.7,
   });
-});
+}
 
-if (compassWidget) {
-  compassWidget.title = "Reset camera to north-up & top-down";
+function updateCompassAndHud() {
+  const camera = viewer.camera;
+  const clampedPitch = clampCameraPitch();
+  const compassAnchor = resolveCompassAnchor();
+  const zoomDistance = compassAnchor
+    ? Cesium.Cartesian3.distance(camera.positionWC, compassAnchor)
+    : camera.positionCartographic.height;
+  orbitCompass.update(compassAnchor, zoomDistance);
+
+  // ── Heading (compensate for over-the-horizon inversion) ──
+  let headingDeg = Cesium.Math.toDegrees(
+    Cesium.Math.zeroToTwoPi(camera.heading),
+  );
+  const surfaceNormal = Cesium.Cartesian3.normalize(camera.positionWC, scratchSurfaceNormal);
+  const isLookingAwayFromGlobe = Cesium.Cartesian3.dot(camera.directionWC, surfaceNormal) > 0;
+  headingDeg = compensateInvertedHeading(headingDeg, isLookingAwayFromGlobe);
+
+  // ── Camera HUD ──
+  if (cameraHud instanceof HTMLElement) {
+    ensureInteractiveCameraHud();
+
+    const targetCartographic = compassAnchor
+      ? Cesium.Cartographic.fromCartesian(compassAnchor)
+      : camera.positionCartographic;
+    const latDeg = Cesium.Math.toDegrees(targetCartographic.latitude);
+    const lonDeg = Cesium.Math.toDegrees(targetCartographic.longitude);
+    const pitchDisplay = -Cesium.Math.toDegrees(clampedPitch);
+    const hdgDisplay = headingDeg % 360;
+
+    latestHudSnapshot = {
+      latDeg,
+      lonDeg,
+      headingDeg: hdgDisplay,
+      pitchDeg: pitchDisplay,
+      zoomMeters: zoomDistance,
+    };
+
+    if (activeHudEditor?.field !== "lat") {
+      hudButtons.lat?.replaceChildren(`LAT ${formatLatitude(latDeg)}`);
+      hudButtons.lat?.removeAttribute("data-invalid");
+    }
+    if (activeHudEditor?.field !== "lon") {
+      hudButtons.lon?.replaceChildren(`LON ${formatLongitude(lonDeg)}`);
+      hudButtons.lon?.removeAttribute("data-invalid");
+    }
+    if (activeHudEditor?.field !== "heading") {
+      hudButtons.heading?.replaceChildren(`H ${hdgDisplay.toFixed(0)}°`);
+      hudButtons.heading?.removeAttribute("data-invalid");
+    }
+    if (activeHudEditor?.field !== "pitch") {
+      hudButtons.pitch?.replaceChildren(`P ${pitchDisplay.toFixed(0)}°`);
+      hudButtons.pitch?.removeAttribute("data-invalid");
+    }
+    if (activeHudEditor?.field !== "zoom") {
+      hudButtons.zoom?.replaceChildren(`Z ${formatZoomDistance(zoomDistance)}`);
+      hudButtons.zoom?.removeAttribute("data-invalid");
+    }
+  }
+}
+
+viewer.scene.preRender.addEventListener(updateCompassAndHud);
+updateCompassAndHud();
+
+cameraResetButton?.addEventListener("click", resetCameraToNorthUp);
+
+if (cameraResetButton) {
+  cameraResetButton.title = "Reset camera to north-up & top-down";
 }
 
 // ─── Initial Camera View ────────────────────────────────────────────
