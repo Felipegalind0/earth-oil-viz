@@ -8,17 +8,24 @@ import type { RenderedLane } from "./visualization/seaLanes";
 // Scratch vectors (reused every frame, zero allocation)
 const scratchCam = new Cesium.Cartesian3();
 
-// Threshold: cos(~100°) ≈ -0.17  — slightly past the horizon so entities
-// don't pop in/out right at the edge. Negative = behind the globe.
-const DOT_THRESHOLD = 0;
+// Earth equatorial radius (meters) — used to compute geometric horizon
+const R = Cesium.Ellipsoid.WGS84.maximumRadius;
+
+// Small margin subtracted from the threshold so entities don't pop
+// right at the geometric horizon edge.
+const HORIZON_MARGIN = 0.03;
 
 export interface CullableSet {
   spheres: Cesium.Entity[];
   lanes: RenderedLane[];
   /** Precomputed unit-sphere positions for spheres (parallel array) */
   sphereNormals: Cesium.Cartesian3[];
+  /** Precomputed start normals for lanes (parallel array) */
+  laneStartNormals: Cesium.Cartesian3[];
   /** Precomputed midpoint normals for lanes (parallel array) */
   laneMidNormals: Cesium.Cartesian3[];
+  /** Precomputed end normals for lanes (parallel array) */
+  laneEndNormals: Cesium.Cartesian3[];
 }
 
 /**
@@ -36,37 +43,51 @@ export function buildCullableSet(
     return Cesium.Cartesian3.normalize(pos, new Cesium.Cartesian3());
   });
 
-  // Lane midpoint normals
-  const laneMidNormals = lanes.map((lane) => {
-    const mid = lane.points[Math.floor(lane.points.length / 2)];
-    const pos = Cesium.Cartesian3.fromDegrees(mid[1], mid[0], 0);
-    return Cesium.Cartesian3.normalize(pos, new Cesium.Cartesian3());
-  });
+  // Lane start / mid / end normals
+  const laneStartNormals: Cesium.Cartesian3[] = [];
+  const laneMidNormals: Cesium.Cartesian3[] = [];
+  const laneEndNormals: Cesium.Cartesian3[] = [];
+  for (const lane of lanes) {
+    const pts = lane.points;
+    const s = pts[0];
+    const m = pts[Math.floor(pts.length / 2)];
+    const e = pts[pts.length - 1];
+    laneStartNormals.push(Cesium.Cartesian3.normalize(Cesium.Cartesian3.fromDegrees(s[1], s[0], 0), new Cesium.Cartesian3()));
+    laneMidNormals.push(Cesium.Cartesian3.normalize(Cesium.Cartesian3.fromDegrees(m[1], m[0], 0), new Cesium.Cartesian3()));
+    laneEndNormals.push(Cesium.Cartesian3.normalize(Cesium.Cartesian3.fromDegrees(e[1], e[0], 0), new Cesium.Cartesian3()));
+  }
 
-  return { spheres, lanes, sphereNormals, laneMidNormals };
+  return { spheres, lanes, sphereNormals, laneStartNormals, laneMidNormals, laneEndNormals };
 }
 
 /**
  * Per-frame culling update. Call from viewer.clock.onTick.
- * Hides entities whose surface-normal dot camera-normal < threshold.
+ * Uses a dynamic horizon threshold based on camera distance:
+ *   threshold = R / d  (Earth radius / camera distance from center)
+ * This matches the geometric horizon exactly at every zoom level.
  */
 export function updateCulling(
   viewer: Cesium.Viewer,
   set: CullableSet,
 ): void {
-  // Camera direction on unit sphere
   const camPos = viewer.camera.positionWC;
   Cesium.Cartesian3.normalize(camPos, scratchCam);
+
+  // Dynamic threshold: R/d shrinks as camera moves away, grows as it zooms in
+  const camDist = Cesium.Cartesian3.magnitude(camPos);
+  const threshold = R / camDist - HORIZON_MARGIN;
 
   // Cull spheres
   for (let i = 0; i < set.spheres.length; i++) {
     const dot = Cesium.Cartesian3.dot(scratchCam, set.sphereNormals[i]);
-    set.spheres[i].show = dot > DOT_THRESHOLD;
+    set.spheres[i].show = dot > threshold;
   }
 
-  // Cull lanes — use midpoint of route
+  // Cull lanes — visible if ANY of start/mid/end is above threshold
   for (let i = 0; i < set.lanes.length; i++) {
-    const dot = Cesium.Cartesian3.dot(scratchCam, set.laneMidNormals[i]);
-    set.lanes[i].entity.show = dot > DOT_THRESHOLD;
+    const dS = Cesium.Cartesian3.dot(scratchCam, set.laneStartNormals[i]);
+    const dM = Cesium.Cartesian3.dot(scratchCam, set.laneMidNormals[i]);
+    const dE = Cesium.Cartesian3.dot(scratchCam, set.laneEndNormals[i]);
+    set.lanes[i].entity.show = dS > threshold || dM > threshold || dE > threshold;
   }
 }
