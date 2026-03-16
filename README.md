@@ -47,6 +47,8 @@ These route and terminal layers are schematic. They are intended to tell a more 
 src/
 ├── main.ts                          # App entry — viewer, gestures, dataset switching
 ├── culling.ts                       # Hemisphere culling (dot-product visibility test)
+├── mathUtils.ts                     # Pure math helpers for gesture classification and camera control
+├── mathUtils.test.ts                # Unit tests for mathUtils (vitest)
 ├── style.css                        # UI styles
 ├── data/
 │   ├── tradeFlows.ts                # AUTO-GENERATED — 468 bilateral crude oil flows
@@ -56,6 +58,7 @@ src/
 │   ├── regions.ts                   # 10 regions for color grouping
 │   └── seaRoutes.ts                 # Scenario-aware maritime corridor routing
 └── visualization/
+    ├── orbitCompass.ts              # 3D cardinal-direction compass anchored to the globe
     ├── regionSpheres.ts             # Country spheres sized by trade volume
     └── seaLanes.ts                  # Maritime and pipeline route rendering
 ```
@@ -68,7 +71,8 @@ src/
 - **Hemisphere culling**: Entities on the far side of the globe are hidden each frame via a dot-product test (camera normal · entity normal). Zero-allocation per frame using scratch vectors.
 - **Rendering strategy**: Lanes are rendered as persistent corridors only. The particle animation path was removed to reduce per-frame GPU and CPU work.
 - **Country spheres**: Sized by `log1p(totalTradeVolume)`, colored by region with warm/cool tinting based on net exporter/importer status.
-- **Gesture handling**: Trackpad-aware (distinguishes two-finger swipe from mouse wheel), Safari `GestureEvent` support, touchscreen pointer fallback.
+- **Orbit compass**: Cardinal-direction axes and labels rendered around the camera target, with dynamic radius scaling based on zoom distance.
+- **Gesture handling**: Trackpad-aware (distinguishes two-finger swipe from mouse wheel), Safari `GestureEvent` support, touchscreen pointer fallback. Gesture classification and angle math live in `mathUtils.ts`.
 
 ## Methods
 
