@@ -479,20 +479,23 @@ canvas.addEventListener(
         Math.abs(headingDeltaRad) >= Cesium.Math.toRadians(0.02) ? headingDeltaRad : 0,
       );
     } else if (isTrackpad) {
-      // Two-finger swipe → orbit (rotate around the globe like click-drag)
-      // Temporarily remove the constrained axis so rotateRight uses
-      // the camera's local up (heading-aware) instead of the globe's
-      // fixed north pole axis.
+      // Two-finger swipe → heading-aware pan along the globe surface.
+      // Rotate screen deltas by the camera heading so swiping always
+      // moves relative to the camera's facing direction (matching mobile
+      // and Google Earth).  The constrained axis (north pole) is kept
+      // so heading stays stable and roll cannot accumulate.
       const camera = viewer.camera;
       const height = camera.positionCartographic.height;
       const factor = height / 6_000_000;
       const dx = e.deltaX * 0.05 * factor;
       const dy = e.deltaY * 0.05 * factor;
-      const savedAxis = camera.constrainedAxis;
-      camera.constrainedAxis = undefined;
-      camera.rotateRight(Cesium.Math.toRadians(dx));
-      camera.rotateUp(Cesium.Math.toRadians(dy));
-      camera.constrainedAxis = savedAxis;
+      const heading = camera.heading;
+      const cosH = Math.cos(heading);
+      const sinH = Math.sin(heading);
+      const geoDx = dx * cosH - dy * sinH;
+      const geoDy = dy * cosH + dx * sinH;
+      camera.rotateRight(Cesium.Math.toRadians(geoDx));
+      camera.rotateUp(Cesium.Math.toRadians(geoDy));
       clampCameraPitch();
     } else {
       // Regular mouse scroll wheel → zoom
@@ -983,6 +986,21 @@ cameraResetButton?.addEventListener("click", resetCameraToNorthUp);
 
 if (cameraResetButton) {
   cameraResetButton.title = "Reset camera to north-up & top-down";
+}
+
+// ─── Controls Help Modal ────────────────────────────────────────────
+const helpButton = document.getElementById("helpButton");
+const helpModal = document.getElementById("helpModal");
+if (helpButton && helpModal) {
+  helpButton.addEventListener("click", () => {
+    helpModal.style.display = "flex";
+  });
+  document.getElementById("dismissHelp")?.addEventListener("click", () => {
+    helpModal.style.display = "none";
+  });
+  helpModal.addEventListener("click", (e) => {
+    if (e.target === helpModal) helpModal.style.display = "none";
+  });
 }
 
 // ─── Initial Camera View ────────────────────────────────────────────

@@ -377,3 +377,153 @@ body {
 .cesium-infoBox-visible {
   transform: translate(-50%, 0) !important;
 }
+
+/* ─── Help Button ────────────────────────────────────────────────── */
+.help-button {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 1000;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(12, 16, 24, 0.8);
+  color: rgba(255, 255, 255, 0.82);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.help-button:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(20, 26, 36, 0.9);
+}
+
+/* ─── Help Modal ─────────────────────────────────────────────────── */
+.help-modal-card {
+  max-width: 640px;
+  text-align: left;
+}
+
+.help-modal-card h2 {
+  text-align: center;
+  color: #93c5fd;
+  margin-bottom: 1.2rem;
+}
+
+.help-axes {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.help-axis {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.help-axis-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #93c5fd;
+}
+
+.help-axis-triggers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+}
+
+.help-trigger {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+.help-trigger small {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.help-cross {
+  display: grid;
+  grid-template-areas:
+    ".    up    ."
+    "left .     right"
+    ".    down  .";
+  grid-template-columns: 1fr auto 1fr;
+  gap: 2px;
+  place-items: center;
+  width: 100%;
+  padding: 4px 0;
+}
+
+.help-cross-up    { grid-area: up; }
+.help-cross-left  { grid-area: left; justify-self: end; }
+.help-cross-right { grid-area: right; justify-self: start; }
+.help-cross-down  { grid-area: down; }
+
+.help-cross-up,
+.help-cross-down {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.help-cross-left,
+.help-cross-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.help-arrow {
+  color: #93c5fd;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.help-dir-label {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.help-axis-note {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.help-zoom {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  margin: 12px 0 4px;
+}
+
+@media (max-width: 520px) {
+  .help-axes {
+    flex-direction: column;
+  }
+}
