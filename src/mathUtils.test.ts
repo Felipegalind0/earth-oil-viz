@@ -77,16 +77,16 @@ describe("computeTwoPointGestureMetrics", () => {
 
 // ─── classifyTwoPointGestureIntent ────────────────────────────────
 describe("classifyTwoPointGestureIntent", () => {
-  it("recognizes twist intent when rotation dominates", () => {
-    expect(classifyTwoPointGestureIntent(0.09, 1.01)).toBe("twist");
+  it("recognizes swipe intent when centroid translation dominates", () => {
+    expect(classifyTwoPointGestureIntent(15, 1.01)).toBe("swipe");
   });
 
   it("recognizes pinch intent when scale dominates", () => {
-    expect(classifyTwoPointGestureIntent(0.01, 1.14)).toBe("pinch");
+    expect(classifyTwoPointGestureIntent(0, 1.14)).toBe("pinch");
   });
 
   it("returns null while intent is still ambiguous", () => {
-    expect(classifyTwoPointGestureIntent(0.02, 1.02)).toBeNull();
+    expect(classifyTwoPointGestureIntent(1, 1.02)).toBeNull();
   });
 });
 

@@ -14,7 +14,7 @@ export interface TwoPointGestureMetrics {
   centroidY: number;
 }
 
-export type TwoPointGestureIntent = "twist" | "pinch" | null;
+export type TwoPointGestureIntent = "swipe" | "pinch" | null;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -47,21 +47,21 @@ export function computeTwoPointGestureMetrics(
 }
 
 /**
- * Decide whether a two-finger gesture is primarily a twist or pinch.
+ * Decide whether a two-finger gesture is primarily a swipe (centroid translation) or pinch.
  * Returns null while intent is still ambiguous.
  */
 export function classifyTwoPointGestureIntent(
-  totalRotationRad: number,
+  centroidTranslationPx: number,
   scaleRatio: number,
 ): TwoPointGestureIntent {
-  const rotationScore = Math.abs(totalRotationRad) / 0.04;
+  const swipeScore = centroidTranslationPx / 2;
   const scaleScore = Math.abs(scaleRatio - 1) / 0.05;
 
-  if (rotationScore >= 1 && rotationScore > scaleScore * 1.25) {
-    return "twist";
+  if (swipeScore >= 1 && swipeScore > scaleScore * 1.25) {
+    return "swipe";
   }
 
-  if (scaleScore >= 1 && scaleScore > rotationScore * 1.25) {
+  if (scaleScore >= 1 && scaleScore > swipeScore * 1.25) {
     return "pinch";
   }
 

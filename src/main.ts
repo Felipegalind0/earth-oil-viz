@@ -17,7 +17,6 @@ import {
   classifyTwoPointGestureIntent,
   compensateInvertedHeading,
   computeTwoPointGestureMetrics,
-  normalizeAngleDeltaRad,
 } from "./mathUtils";
 
 // ─── Read API key from URL params ───────────────────────────────────
@@ -555,7 +554,7 @@ if (supportsSafariGestureEvents) {
 // Touchscreen fallback: classify two-finger pinch vs twist and only take
 // control when the gesture is clearly a heading rotation.
 type ActiveTouchPoint = { x: number; y: number };
-type TouchGestureIntent = "twist" | "pinch" | null;
+type TouchGestureIntent = "swipe" | "pinch" | null;
 
 interface TouchGestureSession {
   startMetrics: ReturnType<typeof computeTwoPointGestureMetrics>;
@@ -643,38 +642,37 @@ canvas.addEventListener("pointermove", (e: PointerEvent) => {
   if (!metrics) return;
 
   if (touchGestureSession.intent === null) {
-    const totalRotationRad = normalizeAngleDeltaRad(
-      touchGestureSession.startMetrics.angleRad,
-      metrics.angleRad,
+    const centroidTranslationPx = Math.hypot(
+      metrics.centroidX - touchGestureSession.startMetrics.centroidX,
+      metrics.centroidY - touchGestureSession.startMetrics.centroidY,
     );
     const scaleRatio = metrics.distancePx / touchGestureSession.startMetrics.distancePx;
-    const intent = classifyTwoPointGestureIntent(totalRotationRad, scaleRatio);
+    const intent = classifyTwoPointGestureIntent(centroidTranslationPx, scaleRatio);
 
-    if (intent === "twist") {
+    if (intent === "swipe") {
       touchGestureSession.intent = intent;
       suspendTouchControllerInputs();
       e.preventDefault();
-      logGesture("two-finger twist detected", { totalRotationRad, scaleRatio });
+      logGesture("two-finger swipe detected", { centroidTranslationPx, scaleRatio });
     } else if (intent === "pinch") {
       touchGestureSession.intent = intent;
-      logGesture("two-finger pinch detected", { totalRotationRad, scaleRatio });
+      logGesture("two-finger pinch detected", { centroidTranslationPx, scaleRatio });
     }
 
     touchGestureSession.previousMetrics = metrics;
     return;
   }
 
-  if (touchGestureSession.intent === "twist") {
+  if (touchGestureSession.intent === "swipe") {
     e.preventDefault();
-    const angleDelta = normalizeAngleDeltaRad(
-      touchGestureSession.previousMetrics.angleRad,
-      metrics.angleRad,
+    const dx = metrics.centroidX - touchGestureSession.previousMetrics.centroidX;
+    const dy = metrics.centroidY - touchGestureSession.previousMetrics.centroidY;
+    const TOUCH_SWIPE_DEG_PER_PX = 0.15;
+    orbitCameraAroundTarget(
+      Cesium.Math.toRadians(dy * TOUCH_SWIPE_DEG_PER_PX),
+      Cesium.Math.toRadians(dx * TOUCH_SWIPE_DEG_PER_PX),
     );
-
-    if (Math.abs(angleDelta) > 0.003) {
-      orbitCameraAroundTarget(0, -angleDelta);
-      logGesture("applied twist heading delta", { angleDelta });
-    }
+    logGesture("applied swipe orbit delta", { dx, dy });
   }
 
   touchGestureSession.previousMetrics = metrics;
