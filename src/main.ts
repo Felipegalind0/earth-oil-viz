@@ -656,6 +656,8 @@ canvas.addEventListener("pointermove", (e: PointerEvent) => {
       logGesture("two-finger swipe detected", { centroidTranslationPx, scaleRatio });
     } else if (intent === "pinch") {
       touchGestureSession.intent = intent;
+      suspendTouchControllerInputs();
+      e.preventDefault();
       logGesture("two-finger pinch detected", { centroidTranslationPx, scaleRatio });
     }
 
@@ -673,6 +675,18 @@ canvas.addEventListener("pointermove", (e: PointerEvent) => {
       Cesium.Math.toRadians(dx * TOUCH_SWIPE_DEG_PER_PX),
     );
     logGesture("applied swipe orbit delta", { dx, dy });
+  }
+
+  if (touchGestureSession.intent === "pinch") {
+    e.preventDefault();
+    const scaleDelta = metrics.distancePx / touchGestureSession.previousMetrics.distancePx;
+    const height = viewer.camera.positionCartographic.height;
+    if (scaleDelta > 1) {
+      viewer.camera.zoomIn(height * (scaleDelta - 1) * 0.5);
+    } else if (scaleDelta < 1) {
+      viewer.camera.zoomOut(height * (1 - scaleDelta) * 0.5);
+    }
+    logGesture("applied pinch zoom delta", { scaleDelta });
   }
 
   touchGestureSession.previousMetrics = metrics;
