@@ -3,6 +3,12 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "exports": {
+    ".": "./src/globe.ts",
+    "./culling": "./src/culling.ts",
+    "./mathUtils": "./src/mathUtils.ts",
+    "./style.css": "./src/style.css"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && cp -r dist/foss-earth/cesium dist/cesium",
