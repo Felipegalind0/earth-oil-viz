@@ -315,12 +315,6 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
     return clampedPitch;
   }
 
-  function formatZoomDistance(distanceMeters: number): string {
-    if (distanceMeters >= 1_000_000) return `${(distanceMeters / 1_000_000).toFixed(2)}M m`;
-    if (distanceMeters >= 1_000) return `${(distanceMeters / 1_000).toFixed(0)} km`;
-    return `${distanceMeters.toFixed(0)} m`;
-  }
-
   function orbitCameraAroundTarget(pitchDeltaRad: number, headingDeltaRad = 0): void {
     const currentWorldPitch = viewer.camera.pitch;
     const maxUp = MAX_CAMERA_PITCH_RAD - currentWorldPitch;
@@ -534,188 +528,12 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
   canvas.addEventListener("pointerup", removePointer);
   canvas.addEventListener("pointercancel", removePointer);
 
-  // ── Camera HUD & Reset ─────────────────────────────────────────────
-  const cameraHud = document.getElementById("cameraHud");
-  const cameraResetButton = document.getElementById("cameraResetButton");
+  // ── Camera Status Bar & North Button ────────────────────────────────
+  const statusText = document.getElementById("statusText");
+  const northButton = document.getElementById("northButton");
+  const northSvg = northButton?.querySelector("svg");
+  let northSvgAngle = 0;
   const scratchSurfaceNormal = new Cesium.Cartesian3();
-  const MIN_CAMERA_PITCH_DISPLAY_DEG = -Cesium.Math.toDegrees(MAX_CAMERA_PITCH_RAD);
-  const MAX_CAMERA_PITCH_DISPLAY_DEG = -Cesium.Math.toDegrees(MIN_CAMERA_PITCH_RAD);
-
-  type CameraHudField = "lat" | "lon" | "heading" | "pitch" | "zoom";
-
-  type CameraHudSnapshot = {
-    latDeg: number;
-    lonDeg: number;
-    headingDeg: number;
-    pitchDeg: number;
-    zoomMeters: number;
-  };
-
-  type ActiveHudEditor = {
-    field: CameraHudField;
-    button: HTMLButtonElement;
-    input: HTMLInputElement;
-  };
-
-  const hudButtons: Partial<Record<CameraHudField, HTMLButtonElement>> = {};
-  let latestHudSnapshot: CameraHudSnapshot | null = null;
-  let activeHudEditor: ActiveHudEditor | null = null;
-
-  function normalizeLongitudeDeg(lonDeg: number): number {
-    return ((lonDeg + 180) % 360 + 360) % 360 - 180;
-  }
-
-  function formatLatitude(latDeg: number): string {
-    return `${Math.abs(latDeg).toFixed(1)}°${latDeg >= 0 ? "N" : "S"}`;
-  }
-
-  function formatLongitude(lonDeg: number): string {
-    return `${Math.abs(lonDeg).toFixed(1)}°${lonDeg >= 0 ? "E" : "W"}`;
-  }
-
-  function parseDistanceMeters(raw: string): number | null {
-    const normalized = raw.trim().toLowerCase();
-    if (!normalized) return null;
-    const kmMatch = normalized.match(/^(-?\d+(?:\.\d+)?)\s*km$/);
-    if (kmMatch) {
-      const valueKm = Number(kmMatch[1]);
-      return Number.isFinite(valueKm) ? valueKm * 1000 : null;
-    }
-    const mMatch = normalized.match(/^(-?\d+(?:\.\d+)?)\s*m$/);
-    if (mMatch) {
-      const valueM = Number(mMatch[1]);
-      return Number.isFinite(valueM) ? valueM : null;
-    }
-    const value = Number(normalized);
-    return Number.isFinite(value) ? value : null;
-  }
-
-  function applyCameraSnapshot(snapshot: CameraHudSnapshot): void {
-    const latDeg = Cesium.Math.clamp(snapshot.latDeg, -89.999, 89.999);
-    const lonDeg = normalizeLongitudeDeg(snapshot.lonDeg);
-    const headingDeg = ((snapshot.headingDeg % 360) + 360) % 360;
-    const pitchDeg = Cesium.Math.clamp(snapshot.pitchDeg, MIN_CAMERA_PITCH_DISPLAY_DEG, MAX_CAMERA_PITCH_DISPLAY_DEG);
-    const zoomMeters = Math.max(50, snapshot.zoomMeters);
-    const target = Cesium.Cartesian3.fromDegrees(lonDeg, latDeg, 0);
-
-    viewer.trackedEntity = undefined;
-    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-    viewer.camera.lookAt(
-      target,
-      new Cesium.HeadingPitchRange(
-        Cesium.Math.toRadians(headingDeg),
-        Cesium.Math.toRadians(-pitchDeg),
-        zoomMeters,
-      ),
-    );
-    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-    clampCameraPitch();
-  }
-
-  function getHudFieldEditValue(field: CameraHudField, snapshot: CameraHudSnapshot): string {
-    if (field === "lat") return snapshot.latDeg.toFixed(4);
-    if (field === "lon") return snapshot.lonDeg.toFixed(4);
-    if (field === "heading") return snapshot.headingDeg.toFixed(2);
-    if (field === "pitch") return snapshot.pitchDeg.toFixed(2);
-    return snapshot.zoomMeters.toFixed(0);
-  }
-
-  function parseHudFieldValue(field: CameraHudField, raw: string): number | null {
-    if (field === "zoom") return parseDistanceMeters(raw);
-    const parsed = Number(raw.trim());
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  function applyHudFieldValue(field: CameraHudField, value: number): void {
-    if (!latestHudSnapshot) return;
-    const next: CameraHudSnapshot = { ...latestHudSnapshot };
-    if (field === "lat") next.latDeg = value;
-    if (field === "lon") next.lonDeg = value;
-    if (field === "heading") next.headingDeg = value;
-    if (field === "pitch") next.pitchDeg = value;
-    if (field === "zoom") next.zoomMeters = value;
-    applyCameraSnapshot(next);
-  }
-
-  function endHudInlineEdit(): void {
-    if (!activeHudEditor) return;
-    activeHudEditor.button.classList.remove("is-editing");
-    activeHudEditor.button.removeAttribute("data-invalid");
-    activeHudEditor = null;
-  }
-
-  function beginHudInlineEdit(field: CameraHudField): void {
-    if (!latestHudSnapshot) return;
-    const button = hudButtons[field];
-    if (!button) return;
-    if (activeHudEditor?.field === field) {
-      activeHudEditor.input.focus();
-      activeHudEditor.input.select();
-      return;
-    }
-    endHudInlineEdit();
-
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "camera-hud-input";
-    input.value = getHudFieldEditValue(field, latestHudSnapshot);
-    input.spellcheck = false;
-    input.autocomplete = "off";
-    input.autocapitalize = "off";
-    input.setAttribute("aria-label", `Edit ${field}`);
-
-    button.classList.add("is-editing");
-    button.replaceChildren(input);
-    activeHudEditor = { field, button, input };
-
-    const cancelEdit = () => endHudInlineEdit();
-    const commitEdit = () => {
-      if (!activeHudEditor || activeHudEditor.field !== field) return;
-      const parsed = parseHudFieldValue(field, input.value);
-      if (parsed === null) {
-        button.setAttribute("data-invalid", "true");
-        input.focus();
-        input.select();
-        return;
-      }
-      applyHudFieldValue(field, parsed);
-      endHudInlineEdit();
-    };
-
-    input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") { event.preventDefault(); commitEdit(); return; }
-      if (event.key === "Escape") { event.preventDefault(); cancelEdit(); }
-    });
-    input.addEventListener("blur", () => commitEdit());
-    input.focus();
-    input.select();
-  }
-
-  function ensureInteractiveCameraHud(): void {
-    if (!(cameraHud instanceof HTMLElement)) return;
-    if (cameraHud.dataset.mode === "interactive") return;
-    cameraHud.dataset.mode = "interactive";
-    cameraHud.classList.add("camera-hud-grid");
-    cameraHud.innerHTML = `
-      <div class="camera-hud-row camera-hud-row-2">
-        <button type="button" class="camera-hud-value" data-field="lat">LAT --</button>
-        <button type="button" class="camera-hud-value" data-field="lon">LON --</button>
-      </div>
-      <div class="camera-hud-row camera-hud-row-3">
-        <button type="button" class="camera-hud-value" data-field="heading">H --</button>
-        <button type="button" class="camera-hud-value" data-field="pitch">P --</button>
-        <button type="button" class="camera-hud-value" data-field="zoom">Z --</button>
-      </div>
-    `;
-    const fields: CameraHudField[] = ["lat", "lon", "heading", "pitch", "zoom"];
-    for (const field of fields) {
-      const button = cameraHud.querySelector<HTMLButtonElement>(`button[data-field="${field}"]`);
-      if (!button) continue;
-      hudButtons[field] = button;
-      button.title = "Click to edit; Enter to apply, Esc to cancel";
-      button.addEventListener("click", () => beginHudInlineEdit(field));
-    }
-  }
 
   function resetCameraToNorthUp(): void {
     if (hadPoiSelection || viewer.trackedEntity) {
@@ -729,6 +547,12 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
       orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
       duration: 0.7,
     });
+  }
+
+  function formatStatusZoom(distanceMeters: number): string {
+    if (distanceMeters >= 1_000_000) return `${(distanceMeters / 1_000_000).toFixed(1)}Mm`;
+    if (distanceMeters >= 1_000) return `${(distanceMeters / 1_000).toFixed(0)}km`;
+    return `${distanceMeters.toFixed(0)}m`;
   }
 
   function updateCompassAndHud() {
@@ -745,8 +569,19 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
     const isLookingAwayFromGlobe = Cesium.Cartesian3.dot(camera.directionWC, surfaceNormal) > 0;
     headingDeg = compensateInvertedHeading(headingDeg, isLookingAwayFromGlobe);
 
-    if (cameraHud instanceof HTMLElement) {
-      ensureInteractiveCameraHud();
+    // Rotate the north button SVG to reflect current heading
+    // Use shortest-path rotation to avoid the 180° snap at 0/360 boundary
+    if (northSvg) {
+      const prev = northSvgAngle;
+      let delta = (-headingDeg) - prev;
+      // Wrap delta to [-180, 180] for shortest path
+      delta = ((delta + 180) % 360 + 360) % 360 - 180;
+      northSvgAngle = prev + delta;
+      northSvg.style.transform = `rotate(${northSvgAngle}deg)`;
+    }
+
+    // Update condensed status text
+    if (statusText) {
       const targetCartographic = compassAnchor
         ? Cesium.Cartographic.fromCartesian(compassAnchor)
         : camera.positionCartographic;
@@ -755,36 +590,20 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
       const pitchDisplay = -Cesium.Math.toDegrees(clampedPitch);
       const hdgDisplay = headingDeg % 360;
 
-      latestHudSnapshot = { latDeg, lonDeg, headingDeg: hdgDisplay, pitchDeg: pitchDisplay, zoomMeters: zoomDistance };
+      const latStr = `${Math.abs(latDeg).toFixed(4)}\u00B0${latDeg >= 0 ? "N" : "S"}`;
+      const lonStr = `${Math.abs(lonDeg).toFixed(4)}\u00B0${lonDeg >= 0 ? "E" : "W"}`;
+      const hdgStr = `h${String(Math.round(hdgDisplay)).padStart(3, "0")}\u00B0`;
+      const pitchStr = `p${String(Math.round(pitchDisplay)).padStart(2, "0")}\u00B0`;
+      const zoomStr = `z${formatStatusZoom(zoomDistance)}`;
 
-      if (activeHudEditor?.field !== "lat") {
-        hudButtons.lat?.replaceChildren(`LAT ${formatLatitude(latDeg)}`);
-        hudButtons.lat?.removeAttribute("data-invalid");
-      }
-      if (activeHudEditor?.field !== "lon") {
-        hudButtons.lon?.replaceChildren(`LON ${formatLongitude(lonDeg)}`);
-        hudButtons.lon?.removeAttribute("data-invalid");
-      }
-      if (activeHudEditor?.field !== "heading") {
-        hudButtons.heading?.replaceChildren(`H ${hdgDisplay.toFixed(0)}°`);
-        hudButtons.heading?.removeAttribute("data-invalid");
-      }
-      if (activeHudEditor?.field !== "pitch") {
-        hudButtons.pitch?.replaceChildren(`P ${pitchDisplay.toFixed(0)}°`);
-        hudButtons.pitch?.removeAttribute("data-invalid");
-      }
-      if (activeHudEditor?.field !== "zoom") {
-        hudButtons.zoom?.replaceChildren(`Z ${formatZoomDistance(zoomDistance)}`);
-        hudButtons.zoom?.removeAttribute("data-invalid");
-      }
+      statusText.textContent = `${latStr} ${lonStr} ${hdgStr} ${pitchStr} ${zoomStr}`;
     }
   }
 
   viewer.scene.preRender.addEventListener(updateCompassAndHud);
   updateCompassAndHud();
 
-  cameraResetButton?.addEventListener("click", resetCameraToNorthUp);
-  if (cameraResetButton) cameraResetButton.title = "Reset camera to north-up & top-down";
+  northButton?.addEventListener("click", resetCameraToNorthUp);
 
   // ── Help modal ─────────────────────────────────────────────────────
   const helpButton = document.getElementById("helpButton");

@@ -9,13 +9,6 @@
   <body>
     <div id="cesiumContainer"></div>
 
-    <div id="compassWidget" class="camera-hud-panel">
-      <button id="cameraResetButton" class="camera-reset-button" type="button">
-        North Up
-      </button>
-      <div id="cameraHud" class="camera-hud"></div>
-    </div>
-
     <!-- Fallback warning modal (hidden by default, shown via JS) -->
     <div id="fallbackModal" class="modal-overlay" style="display: none">
       <div class="modal-card">
@@ -29,8 +22,17 @@
       </div>
     </div>
 
-    <!-- Controls help button -->
-    <button id="helpButton" class="help-button" type="button" title="Controls help">?</button>
+    <!-- Bottom-right HUD bar -->
+    <div id="bottomBar" class="bottom-bar">
+      <span id="statusText" class="status-text"></span>
+      <button id="northButton" class="hud-circle-button north-button" type="button" title="North up">
+        <svg viewBox="0 0 36 36" width="36" height="36">
+          <polygon class="north-triangle" points="18,4 14,12 22,12" fill="#ef4444"/>
+          <text x="18" y="26" text-anchor="middle" fill="rgba(255,255,255,0.82)" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="14">N</text>
+        </svg>
+      </button>
+      <button id="helpButton" class="hud-circle-button" type="button" title="Controls help">?</button>
+    </div>
 
     <!-- Controls help modal -->
     <div id="helpModal" class="modal-overlay" style="display: none">
