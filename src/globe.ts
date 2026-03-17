@@ -529,6 +529,58 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
   canvas.addEventListener("pointercancel", removePointer);
 
   // ── Camera Status Bar & North Button ────────────────────────────────
+  // Inject HUD elements if not already present in the document
+  if (!document.getElementById("bottomBar")) {
+    const bar = document.createElement("div");
+    bar.id = "bottomBar";
+    bar.className = "bottom-bar";
+    bar.innerHTML = `
+      <span id="statusText" class="status-text"></span>
+      <button id="northButton" class="hud-circle-button north-button" type="button" title="North up">
+        <svg viewBox="0 0 36 36" width="36" height="36">
+          <polygon class="north-triangle" points="18,4 14,12 22,12" fill="#ef4444"/>
+          <text x="18" y="26" text-anchor="middle" fill="rgba(255,255,255,0.82)" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="14">N</text>
+        </svg>
+      </button>
+      <button id="helpButton" class="hud-circle-button" type="button" title="Controls help">?</button>
+    `;
+    document.body.appendChild(bar);
+  }
+  if (!document.getElementById("helpModal")) {
+    const modal = document.createElement("div");
+    modal.id = "helpModal";
+    modal.className = "modal-overlay";
+    modal.style.display = "none";
+    modal.innerHTML = `
+      <div class="modal-card help-modal-card">
+        <h2>Controls</h2>
+        <div class="help-axes">
+          <div class="help-axis">
+            <div class="help-axis-title">Pan</div>
+            <div class="help-axis-triggers">
+              <span class="help-trigger">Left drag</span>
+              <span class="help-trigger">2-finger swipe</span>
+              <span class="help-trigger">1-finger <small>(mobile)</small></span>
+            </div>
+            <div class="help-axis-note">Changes Lat / Lon</div>
+          </div>
+          <div class="help-axis">
+            <div class="help-axis-title">Orbit</div>
+            <div class="help-axis-triggers">
+              <span class="help-trigger">Right drag</span>
+              <span class="help-trigger">\u21E7 + 2-finger swipe</span>
+              <span class="help-trigger">2-finger <small>(mobile)</small></span>
+            </div>
+            <div class="help-axis-note">Changes Heading / Pitch</div>
+          </div>
+        </div>
+        <div class="help-zoom">Zoom \u2014 Scroll wheel \u00B7 Pinch</div>
+        <button id="dismissHelp">Got it</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
   const statusText = document.getElementById("statusText");
   const northButton = document.getElementById("northButton");
   const northSvg = northButton?.querySelector("svg");
