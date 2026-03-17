@@ -75,6 +75,10 @@ Append `?key=YOUR_GOOGLE_MAPS_API_KEY` to the URL for [Google Photorealistic 3D 
 | Zoom | Scroll wheel / Pinch | Pinch |
 | North-up reset | Click "North Up" button | Click "North Up" button |
 
+## Projects Using FOSS Earth
+
+- **[foss-earth-oil](https://github.com/felipegalind0/foss-earth-oil)** — Global crude oil trade flow visualization with 468 bilateral flows, Dijkstra maritime routing, chokepoint scenarios, and country spheres.
+
 ## Stack
 
 - **Cesium.js** 1.139 — 3D globe rendering
