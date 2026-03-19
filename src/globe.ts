@@ -10,7 +10,6 @@ import "cesium/Build/Cesium/Widgets/widgets.css";
 import { createOrbitCompass } from "./visualization/orbitCompass";
 import type { OrbitCompassHandle } from "./visualization/orbitCompass";
 import {
-  compensateInvertedHeading,
   computeTwoPointGestureMetrics,
 } from "./mathUtils";
 
@@ -91,7 +90,6 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
   });
 
   const orbitCompass = createOrbitCompass(viewer);
-  const MIN_CAMERA_PITCH_RAD = Cesium.Math.toRadians(-90);
   const MAX_CAMERA_PITCH_RAD = Cesium.Math.toRadians(-1);
   const userAgent = navigator.userAgent;
   const isAppleMobileBrowser = /iPhone|iPad|iPod/i.test(userAgent);
@@ -242,8 +240,8 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
   controller.enableTilt = true;
   controller.enableZoom = true;
   controller.enableRotate = true;
-  controller.enableTranslate = true;
-  controller.enableLook = true;
+  controller.enableTranslate = false;
+  controller.enableLook = false;
 
   controller.tiltEventTypes = [
     Cesium.CameraEventType.MIDDLE_DRAG,
@@ -259,7 +257,6 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
 
   const canvas = viewer.scene.canvas;
   const scratchScreenCenter = new Cesium.Cartesian2();
-  const scratchOrbitTransform = new Cesium.Matrix4();
   const scratchWaypointPosition = new Cesium.Cartesian3();
   const scratchSurfaceAnchor = new Cesium.Cartesian3();
   let lastOrbitTarget: Cesium.Cartesian3 | null = null;
@@ -267,11 +264,7 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
   function getOrbitTargetAtScreenCenter(): Cesium.Cartesian3 | null {
     scratchScreenCenter.x = canvas.clientWidth * 0.5;
     scratchScreenCenter.y = canvas.clientHeight * 0.5;
-    const ray = viewer.camera.getPickRay(scratchScreenCenter);
-    let target = ray ? viewer.scene.globe.pick(ray, viewer.scene) : undefined;
-    if (!target) {
-      target = viewer.camera.pickEllipsoid(scratchScreenCenter, viewer.scene.globe.ellipsoid) ?? undefined;
-    }
+    const target = viewer.camera.pickEllipsoid(scratchScreenCenter, viewer.scene.globe.ellipsoid) ?? undefined;
     if (target) {
       if (lastOrbitTarget) {
         Cesium.Cartesian3.clone(target, lastOrbitTarget);
@@ -304,46 +297,224 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
     return getPoiOrbitTarget() ?? getOrbitTargetAtScreenCenter();
   }
 
-  function clampCameraPitch(): number {
-    const clampedPitch = Cesium.Math.clamp(viewer.camera.pitch, MIN_CAMERA_PITCH_RAD, MAX_CAMERA_PITCH_RAD);
-    if (Math.abs(clampedPitch - viewer.camera.pitch) > 0.0001) {
-      viewer.camera.setView({
-        destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
-        orientation: { heading: viewer.camera.heading, pitch: clampedPitch, roll: 0 },
-      });
-    }
-    return clampedPitch;
+  interface CameraControlState {
+    latRad: number;
+    lonRad: number;
+    headingRad: number;
+    pitchRad: number;
+    zoomMeters: number;
   }
 
-  function orbitCameraAroundTarget(pitchDeltaRad: number, headingDeltaRad = 0): void {
-    const currentWorldPitch = viewer.camera.pitch;
-    const maxUp = MAX_CAMERA_PITCH_RAD - currentWorldPitch;
-    const maxDown = MIN_CAMERA_PITCH_RAD - currentWorldPitch;
-    const clampedPitchDeltaRad = Cesium.Math.clamp(pitchDeltaRad, maxDown, maxUp);
-    const effectiveHeadingDeltaRad = Math.abs(headingDeltaRad) >= Cesium.Math.toRadians(0.02) ? headingDeltaRad : 0;
-    const effectivePitchDeltaRad = Math.abs(clampedPitchDeltaRad) >= Cesium.Math.toRadians(0.02) ? clampedPitchDeltaRad : 0;
-    if (effectiveHeadingDeltaRad === 0 && effectivePitchDeltaRad === 0) return;
+  /**
+   * Anchor-locked camera state.
+   * Zoom modifies only zoomMeters, preserving lat/lon/heading/pitch.
+   */
+  const MIN_CAMERA_ANCHOR_DISTANCE_M = 25;
+  const MAX_CAMERA_ANCHOR_DISTANCE_M = 80_000_000;
+  const MIN_STATE_PITCH_RAD = Cesium.Math.toRadians(1);
+  const MAX_STATE_PITCH_RAD = Cesium.Math.toRadians(89);
+  const HEADING_INFERENCE_VERTICAL_THRESHOLD_RAD = Cesium.Math.toRadians(87);
+  const HEADING_INFERENCE_MIN_HORIZONTAL = 0.01;
+  const scratchCameraStateAnchor = new Cesium.Cartesian3();
+  const scratchAnchorCartographic = new Cesium.Cartographic();
+  const scratchAnchorFrame = new Cesium.Matrix4();
+  const scratchAnchorEast = new Cesium.Cartesian3();
+  const scratchAnchorNorth = new Cesium.Cartesian3();
+  const scratchAnchorUp = new Cesium.Cartesian3();
+  const scratchDirectionToAnchor = new Cesium.Cartesian3();
+  const scratchHorizontalDirection = new Cesium.Cartesian3();
+  const scratchHorizontalProjection = new Cesium.Cartesian3();
+  const scratchHeadingDirection = new Cesium.Cartesian3();
+  const scratchRailDirection = new Cesium.Cartesian3();
+  const scratchCameraDestination = new Cesium.Cartesian3();
+  const scratchCameraUp = new Cesium.Cartesian3();
+  let cameraState: CameraControlState | null = null;
 
-    const target = getOrbitTargetAtScreenCenter();
-    if (!target) return;
+  function clampStatePitch(pitchRad: number): number {
+    return Cesium.Math.clamp(pitchRad, MIN_STATE_PITCH_RAD, MAX_STATE_PITCH_RAD);
+  }
+
+  function getAnchorBasis(anchor: Cesium.Cartesian3): {
+    east: Cesium.Cartesian3;
+    north: Cesium.Cartesian3;
+    up: Cesium.Cartesian3;
+  } {
+    const frame = Cesium.Transforms.eastNorthUpToFixedFrame(anchor, undefined, scratchAnchorFrame);
+    Cesium.Matrix4.multiplyByPointAsVector(frame, Cesium.Cartesian3.UNIT_X, scratchAnchorEast);
+    Cesium.Matrix4.multiplyByPointAsVector(frame, Cesium.Cartesian3.UNIT_Y, scratchAnchorNorth);
+    Cesium.Matrix4.multiplyByPointAsVector(frame, Cesium.Cartesian3.UNIT_Z, scratchAnchorUp);
+    Cesium.Cartesian3.normalize(scratchAnchorEast, scratchAnchorEast);
+    Cesium.Cartesian3.normalize(scratchAnchorNorth, scratchAnchorNorth);
+    Cesium.Cartesian3.normalize(scratchAnchorUp, scratchAnchorUp);
+    return { east: scratchAnchorEast, north: scratchAnchorNorth, up: scratchAnchorUp };
+  }
+
+  function getCameraStateAnchorCartesian(): Cesium.Cartesian3 | null {
+    if (!cameraState) return null;
+    return Cesium.Cartesian3.fromRadians(
+      cameraState.lonRad,
+      cameraState.latRad,
+      0,
+      viewer.scene.globe.ellipsoid,
+      scratchCameraStateAnchor,
+    );
+  }
+
+  function syncCameraStateFromView(anchorOverride?: Cesium.Cartesian3 | null): void {
+    const camera = viewer.camera;
+    const anchor = anchorOverride ?? resolveCompassAnchor();
+    if (!anchor) return;
+
+    const anchorCartographic = Cesium.Cartographic.fromCartesian(
+      anchor,
+      viewer.scene.globe.ellipsoid,
+      scratchAnchorCartographic,
+    );
+    if (!anchorCartographic) return;
+
+    const { east, north, up } = getAnchorBasis(anchor);
+    Cesium.Cartesian3.subtract(anchor, camera.positionWC, scratchDirectionToAnchor);
+    const directionMagnitude = Cesium.Cartesian3.magnitude(scratchDirectionToAnchor);
+    if (!Number.isFinite(directionMagnitude) || directionMagnitude <= 0.001) return;
+    Cesium.Cartesian3.normalize(scratchDirectionToAnchor, scratchDirectionToAnchor);
+
+    const verticalComponent = Cesium.Cartesian3.dot(scratchDirectionToAnchor, up);
+    const pitchRad = clampStatePitch(Math.asin(Cesium.Math.clamp(-verticalComponent, -1, 1)));
+
+    Cesium.Cartesian3.multiplyByScalar(up, verticalComponent, scratchHorizontalProjection);
+    Cesium.Cartesian3.subtract(scratchDirectionToAnchor, scratchHorizontalProjection, scratchHorizontalDirection);
+    const horizontalMagnitude = Cesium.Cartesian3.magnitude(scratchHorizontalDirection);
+    const isNearVertical = Math.abs(pitchRad) >= HEADING_INFERENCE_VERTICAL_THRESHOLD_RAD;
+    let headingRad = cameraState?.headingRad ?? 0;
+    if (!isNearVertical && horizontalMagnitude > HEADING_INFERENCE_MIN_HORIZONTAL) {
+      Cesium.Cartesian3.normalize(scratchHorizontalDirection, scratchHorizontalDirection);
+      const eastComponent = Cesium.Cartesian3.dot(scratchHorizontalDirection, east);
+      const northComponent = Cesium.Cartesian3.dot(scratchHorizontalDirection, north);
+      headingRad = Math.atan2(eastComponent, northComponent);
+    }
+
+    cameraState = {
+      latRad: anchorCartographic.latitude,
+      lonRad: anchorCartographic.longitude,
+      headingRad,
+      pitchRad,
+      zoomMeters: Cesium.Math.clamp(
+        Cesium.Cartesian3.distance(camera.positionWC, anchor),
+        MIN_CAMERA_ANCHOR_DISTANCE_M,
+        MAX_CAMERA_ANCHOR_DISTANCE_M,
+      ),
+    };
+  }
+
+  function ensureCameraState(): CameraControlState | null {
+    if (!cameraState) syncCameraStateFromView();
+    return cameraState;
+  }
+
+  function applyCameraState(): void {
+    const state = ensureCameraState();
+    if (!state) return;
+    const anchor = getCameraStateAnchorCartesian();
+    if (!anchor) return;
+
+    const { east, north, up } = getAnchorBasis(anchor);
+    const cosHeading = Math.cos(state.headingRad);
+    const sinHeading = Math.sin(state.headingRad);
+    const cosPitch = Math.cos(state.pitchRad);
+    const sinPitch = Math.sin(state.pitchRad);
+
+    Cesium.Cartesian3.multiplyByScalar(north, cosHeading, scratchHeadingDirection);
+    Cesium.Cartesian3.multiplyByScalar(east, sinHeading, scratchHorizontalProjection);
+    Cesium.Cartesian3.add(scratchHeadingDirection, scratchHorizontalProjection, scratchHeadingDirection);
+    Cesium.Cartesian3.normalize(scratchHeadingDirection, scratchHeadingDirection);
+
+    Cesium.Cartesian3.multiplyByScalar(scratchHeadingDirection, cosPitch, scratchRailDirection);
+    Cesium.Cartesian3.multiplyByScalar(up, -sinPitch, scratchHorizontalProjection);
+    Cesium.Cartesian3.add(scratchRailDirection, scratchHorizontalProjection, scratchRailDirection);
+    Cesium.Cartesian3.normalize(scratchRailDirection, scratchRailDirection);
+
+    Cesium.Cartesian3.multiplyByScalar(scratchRailDirection, state.zoomMeters, scratchCameraDestination);
+    Cesium.Cartesian3.subtract(anchor, scratchCameraDestination, scratchCameraDestination);
+
+    Cesium.Cartesian3.subtract(anchor, scratchCameraDestination, scratchDirectionToAnchor);
+    Cesium.Cartesian3.normalize(scratchDirectionToAnchor, scratchDirectionToAnchor);
+
+    const upDotDirection = Cesium.Cartesian3.dot(up, scratchDirectionToAnchor);
+    Cesium.Cartesian3.multiplyByScalar(scratchDirectionToAnchor, upDotDirection, scratchHorizontalProjection);
+    Cesium.Cartesian3.subtract(up, scratchHorizontalProjection, scratchCameraUp);
+    if (Cesium.Cartesian3.magnitudeSquared(scratchCameraUp) < 1e-6) {
+      Cesium.Cartesian3.clone(north, scratchCameraUp);
+    } else {
+      Cesium.Cartesian3.normalize(scratchCameraUp, scratchCameraUp);
+    }
 
     viewer.trackedEntity = undefined;
     viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-
-    const orbitTransform = Cesium.Transforms.eastNorthUpToFixedFrame(target, undefined, scratchOrbitTransform);
-    viewer.camera.lookAtTransform(orbitTransform);
-    if (effectiveHeadingDeltaRad !== 0) viewer.camera.rotateRight(effectiveHeadingDeltaRad);
-    if (effectivePitchDeltaRad !== 0) viewer.camera.rotateUp(effectivePitchDeltaRad);
-    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
-
     viewer.camera.setView({
-      destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
+      destination: Cesium.Cartesian3.clone(scratchCameraDestination),
       orientation: {
-        heading: viewer.camera.heading,
-        pitch: Cesium.Math.clamp(viewer.camera.pitch, MIN_CAMERA_PITCH_RAD, MAX_CAMERA_PITCH_RAD),
-        roll: 0,
+        direction: Cesium.Cartesian3.clone(scratchDirectionToAnchor),
+        up: Cesium.Cartesian3.clone(scratchCameraUp),
       },
     });
+  }
+
+  function zoomPreservingOrientation(amount: number): void {
+    const state = ensureCameraState();
+    if (!state) {
+      if (amount > 0) viewer.camera.zoomIn(amount);
+      else viewer.camera.zoomOut(-amount);
+      return;
+    }
+
+    state.zoomMeters = Cesium.Math.clamp(
+      state.zoomMeters - amount,
+      MIN_CAMERA_ANCHOR_DISTANCE_M,
+      MAX_CAMERA_ANCHOR_DISTANCE_M,
+    );
+    applyCameraState();
+  }
+
+  function panCameraAcrossGrid(screenDxPx: number, screenDyPx: number): void {
+    const state = ensureCameraState();
+    if (!state) return;
+
+    const frustum = viewer.camera.frustum as { fovy?: number };
+    const fovy = typeof frustum.fovy === "number" ? frustum.fovy : Cesium.Math.toRadians(60);
+    const metersPerPixel = (2 * state.zoomMeters * Math.tan(fovy * 0.5)) / Math.max(canvas.clientHeight, 1);
+
+    const forwardMeters = -screenDyPx * metersPerPixel;
+    const rightMeters = screenDxPx * metersPerPixel;
+    const cosH = Math.cos(state.headingRad);
+    const sinH = Math.sin(state.headingRad);
+    const northMeters = forwardMeters * cosH - rightMeters * sinH;
+    const eastMeters = forwardMeters * sinH + rightMeters * cosH;
+
+    const earthRadiusMeters = viewer.scene.globe.ellipsoid.maximumRadius;
+    const cosLat = Math.max(Math.cos(state.latRad), 0.01);
+    const latDeltaRad = northMeters / earthRadiusMeters;
+    const lonDeltaRad = eastMeters / (earthRadiusMeters * cosLat);
+
+    state.latRad = Cesium.Math.clamp(state.latRad + latDeltaRad, Cesium.Math.toRadians(-89.999), Cesium.Math.toRadians(89.999));
+    state.lonRad = Cesium.Math.negativePiToPi(state.lonRad + lonDeltaRad);
+    applyCameraState();
+  }
+
+  function orbitCameraAroundTarget(pitchDeltaRad: number, headingDeltaRad = 0): void {
+    const state = ensureCameraState();
+    if (!state) return;
+
+    const effectiveHeadingDeltaRad = Math.abs(headingDeltaRad) >= Cesium.Math.toRadians(0.02)
+      ? headingDeltaRad
+      : 0;
+    const effectivePitchDeltaRad = Math.abs(pitchDeltaRad) >= Cesium.Math.toRadians(0.02)
+      ? pitchDeltaRad
+      : 0;
+    if (effectiveHeadingDeltaRad === 0 && effectivePitchDeltaRad === 0) return;
+
+    state.headingRad = Cesium.Math.negativePiToPi(state.headingRad + effectiveHeadingDeltaRad);
+    state.pitchRad = clampStatePitch(state.pitchRad + effectivePitchDeltaRad);
+    applyCameraState();
   }
 
   canvas.addEventListener(
@@ -360,11 +531,10 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
         if (!supportsSafariGestureEvents) {
           const zoomFraction = -e.deltaY * 0.01;
           const height = viewer.camera.positionCartographic.height;
-          if (zoomFraction > 0) viewer.camera.zoomIn(height * zoomFraction);
-          else viewer.camera.zoomOut(height * -zoomFraction);
+          zoomPreservingOrientation(height * zoomFraction);
         }
       } else if (e.shiftKey) {
-        const pitchDelta = e.deltaY * 0.15;
+        const pitchDelta = -e.deltaY * 0.15;
         const headingDelta = e.deltaX * 0.15;
         const pitchDeltaRad = Cesium.Math.toRadians(pitchDelta);
         const headingDeltaRad = Cesium.Math.toRadians(headingDelta);
@@ -373,23 +543,10 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
           Math.abs(headingDeltaRad) >= Cesium.Math.toRadians(0.02) ? headingDeltaRad : 0,
         );
       } else if (isTrackpad) {
-        const camera = viewer.camera;
-        const height = camera.positionCartographic.height;
-        const factor = height / 6_000_000;
-        const dx = e.deltaX * 0.05 * factor;
-        const dy = e.deltaY * 0.05 * factor;
-        const heading = camera.heading;
-        const cosH = Math.cos(heading);
-        const sinH = Math.sin(heading);
-        const geoDx = dx * cosH - dy * sinH;
-        const geoDy = dy * cosH + dx * sinH;
-        camera.rotateRight(Cesium.Math.toRadians(geoDx));
-        camera.rotateUp(Cesium.Math.toRadians(geoDy));
-        clampCameraPitch();
+        panCameraAcrossGrid(e.deltaX, e.deltaY);
       } else {
         const zoomAmount = e.deltaY;
-        if (zoomAmount > 0) viewer.camera.zoomOut(viewer.camera.positionCartographic.height * 0.08);
-        else viewer.camera.zoomIn(viewer.camera.positionCartographic.height * 0.08);
+        zoomPreservingOrientation(viewer.camera.positionCartographic.height * 0.08 * (zoomAmount > 0 ? -1 : 1));
       }
     },
     { passive: false },
@@ -416,8 +573,8 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
       const scaleDelta = ge.scale / lastGestureScale;
       lastGestureScale = ge.scale;
       const height = viewer.camera.positionCartographic.height;
-      if (scaleDelta > 1) viewer.camera.zoomIn(height * (scaleDelta - 1) * 0.5);
-      else if (scaleDelta < 1) viewer.camera.zoomOut(height * (1 - scaleDelta) * 0.5);
+      if (scaleDelta > 1) zoomPreservingOrientation(height * (scaleDelta - 1) * 0.5);
+      else if (scaleDelta < 1) zoomPreservingOrientation(height * -(1 - scaleDelta) * 0.5);
     }) as EventListener, { passive: false } as AddEventListenerOptions);
 
     canvas.addEventListener("gestureend", ((e: Event) => {
@@ -511,8 +668,8 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
     if (Math.abs(distanceDeltaPx) >= TOUCH_PINCH_DEADZONE_PX) {
       const scaleDelta = metrics.distancePx / touchGestureSession.previousMetrics.distancePx;
       const height = viewer.camera.positionCartographic.height;
-      if (scaleDelta > 1) viewer.camera.zoomIn(height * (scaleDelta - 1) * 0.5);
-      else if (scaleDelta < 1) viewer.camera.zoomOut(height * (1 - scaleDelta) * 0.5);
+      if (scaleDelta > 1) zoomPreservingOrientation(height * (scaleDelta - 1) * 0.5);
+      else if (scaleDelta < 1) zoomPreservingOrientation(height * -(1 - scaleDelta) * 0.5);
       logGesture("applied pinch zoom delta", { scaleDelta, distanceDeltaPx });
     }
     touchGestureSession.previousMetrics = metrics;
@@ -543,6 +700,7 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
         </svg>
       </button>
       <button id="helpButton" class="hud-circle-button" type="button" title="Controls help">?</button>
+      <button id="settingsButton" class="hud-circle-button" type="button" title="Settings">⚙️</button>
     `;
     document.body.appendChild(bar);
   }
@@ -580,13 +738,26 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
     `;
     document.body.appendChild(modal);
   }
+  if (!document.getElementById("settingsModal")) {
+    const modal = document.createElement("div");
+    modal.id = "settingsModal";
+    modal.className = "modal-overlay";
+    modal.style.display = "none";
+    modal.innerHTML = `
+      <div class="modal-card settings-modal-card">
+        <h2>Settings</h2>
+        <p>Camera model: state-driven rail geometry.</p>
+        <p>Pitch convention: positive values tilt upward from the local tangent plane.</p>
+        <button id="dismissSettings">Close</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
 
   const statusText = document.getElementById("statusText");
   const northButton = document.getElementById("northButton");
   const northSvg = northButton?.querySelector("svg");
   let northSvgAngle = 0;
-  const scratchSurfaceNormal = new Cesium.Cartesian3();
-
   function resetCameraToNorthUp(): void {
     if (hadPoiSelection || viewer.trackedEntity) {
       viewer.trackedEntity = undefined;
@@ -609,17 +780,17 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
 
   function updateCompassAndHud() {
     const camera = viewer.camera;
-    const clampedPitch = clampCameraPitch();
-    const compassAnchor = resolveCompassAnchor();
-    const zoomDistance = compassAnchor
-      ? Cesium.Cartesian3.distance(camera.positionWC, compassAnchor)
-      : camera.positionCartographic.height;
+    syncCameraStateFromView();
+    const stateAnchor = getCameraStateAnchorCartesian();
+    const compassAnchor = stateAnchor ?? resolveCompassAnchor();
+    const zoomDistance = cameraState?.zoomMeters
+      ?? (compassAnchor
+        ? Cesium.Cartesian3.distance(camera.positionWC, compassAnchor)
+        : camera.positionCartographic.height);
     orbitCompass.update(compassAnchor, zoomDistance);
 
-    let headingDeg = Cesium.Math.toDegrees(Cesium.Math.zeroToTwoPi(camera.heading));
-    const surfaceNormal = Cesium.Cartesian3.normalize(camera.positionWC, scratchSurfaceNormal);
-    const isLookingAwayFromGlobe = Cesium.Cartesian3.dot(camera.directionWC, surfaceNormal) > 0;
-    headingDeg = compensateInvertedHeading(headingDeg, isLookingAwayFromGlobe);
+    const headingRad = cameraState?.headingRad ?? camera.heading;
+    const headingDeg = Cesium.Math.toDegrees(Cesium.Math.zeroToTwoPi(headingRad));
 
     // Rotate the north button SVG to reflect current heading
     // Use shortest-path rotation to avoid the 180° snap at 0/360 boundary
@@ -634,12 +805,9 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
 
     // Update condensed status text
     if (statusText) {
-      const targetCartographic = compassAnchor
-        ? Cesium.Cartographic.fromCartesian(compassAnchor)
-        : camera.positionCartographic;
-      const latDeg = Cesium.Math.toDegrees(targetCartographic.latitude);
-      const lonDeg = Cesium.Math.toDegrees(targetCartographic.longitude);
-      const pitchDisplay = -Cesium.Math.toDegrees(clampedPitch);
+      const latDeg = Cesium.Math.toDegrees(cameraState?.latRad ?? camera.positionCartographic.latitude);
+      const lonDeg = Cesium.Math.toDegrees(cameraState?.lonRad ?? camera.positionCartographic.longitude);
+      const pitchDisplay = Cesium.Math.toDegrees(cameraState?.pitchRad ?? 0);
       const hdgDisplay = headingDeg % 360;
 
       const latStr = `${Math.abs(latDeg).toFixed(4)}\u00B0${latDeg >= 0 ? "N" : "S"}`;
@@ -660,10 +828,17 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
   // ── Help modal ─────────────────────────────────────────────────────
   const helpButton = document.getElementById("helpButton");
   const helpModal = document.getElementById("helpModal");
+  const settingsButton = document.getElementById("settingsButton");
+  const settingsModal = document.getElementById("settingsModal");
   if (helpButton && helpModal) {
     helpButton.addEventListener("click", () => { helpModal.style.display = "flex"; });
     document.getElementById("dismissHelp")?.addEventListener("click", () => { helpModal.style.display = "none"; });
     helpModal.addEventListener("click", (e) => { if (e.target === helpModal) helpModal.style.display = "none"; });
+  }
+  if (settingsButton && settingsModal) {
+    settingsButton.addEventListener("click", () => { settingsModal.style.display = "flex"; });
+    document.getElementById("dismissSettings")?.addEventListener("click", () => { settingsModal.style.display = "none"; });
+    settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) settingsModal.style.display = "none"; });
   }
 
   // ── Initial camera view ────────────────────────────────────────────
@@ -672,6 +847,7 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
     destination: Cesium.Cartesian3.fromDegrees(iv.lon, iv.lat, iv.height),
     orientation: { heading: Cesium.Math.toRadians(0), pitch: Cesium.Math.toRadians(-90), roll: 0 },
   });
+  syncCameraStateFromView();
 
   // ── Return handle ──────────────────────────────────────────────────
   return {

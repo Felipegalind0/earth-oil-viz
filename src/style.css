@@ -75,6 +75,10 @@ body {
   background: rgba(20, 26, 36, 0.9);
 }
 
+#settingsButton {
+  font-size: 18px;
+}
+
 
 
 
@@ -428,6 +432,20 @@ body {
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.85rem;
   margin: 12px 0 4px;
+}
+
+.settings-modal-card {
+  max-width: 460px;
+  text-align: left;
+}
+
+.settings-modal-card h2 {
+  color: #93c5fd;
+  margin-bottom: 0.85rem;
+}
+
+.settings-modal-card p {
+  margin-bottom: 0.75rem;
 }
 
 @media (max-width: 520px) {
