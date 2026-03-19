@@ -765,11 +765,17 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
       viewer.selectedEntity = undefined;
       hadPoiSelection = false;
     }
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
-      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
-      duration: 0.7,
-    });
+    const state = ensureCameraState();
+    if (!state) {
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.clone(viewer.camera.positionWC),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+      });
+      return;
+    }
+    state.headingRad = 0;
+    state.pitchRad = MAX_STATE_PITCH_RAD;
+    applyCameraState();
   }
 
   function formatStatusZoom(distanceMeters: number): string {
