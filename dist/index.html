@@ -8,8 +8,8 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌎</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>foss-earth</title>
-    <script type="module" crossorigin src="/foss-earth/assets/index-B2G94GAk.js"></script>
-    <link rel="stylesheet" crossorigin href="/foss-earth/assets/index-DXb2LCPU.css">
+    <script type="module" crossorigin src="/foss-earth/assets/index-DGE03iJM.js"></script>
+    <link rel="stylesheet" crossorigin href="/foss-earth/assets/index-CZLHJ4dB.css">
   </head>
   <body>
     <div id="cesiumContainer"></div>
@@ -30,6 +30,14 @@
     <!-- Bottom-right HUD bar -->
     <div id="bottomBar" class="bottom-bar">
       <span id="statusText" class="status-text"></span>
+      <div id="pitchWidget" class="hud-circle-button pitch-widget" role="img" aria-label="Pitch indicator" title="Pitch">
+        <svg viewBox="0 0 36 36" width="36" height="36" aria-hidden="true">
+          <line class="pitch-baseline" x1="8" y1="18" x2="28" y2="18" />
+          <line id="pitchNeedle" class="pitch-needle" x1="8" y1="18" x2="28" y2="18" />
+          <circle class="pitch-pivot" cx="8" cy="18" r="1.7" />
+          <text x="18" y="30" text-anchor="middle" class="pitch-label">P</text>
+        </svg>
+      </div>
       <button id="northButton" class="hud-circle-button north-button" type="button" title="North up">
         <svg viewBox="0 0 36 36" width="36" height="36">
           <polygon class="north-triangle" points="18,4 14,12 22,12" fill="#ef4444"/>

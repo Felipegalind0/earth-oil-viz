@@ -75,6 +75,36 @@ body {
   background: rgba(20, 26, 36, 0.9);
 }
 
+.pitch-widget {
+  cursor: default;
+  pointer-events: none;
+}
+
+.pitch-baseline {
+  stroke: rgba(148, 163, 184, 0.9);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.pitch-needle {
+  stroke: rgba(255, 255, 255, 0.95);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 2 3;
+  transform-origin: 8px 18px;
+}
+
+.pitch-pivot {
+  fill: rgba(255, 255, 255, 0.78);
+}
+
+.pitch-label {
+  fill: rgba(255, 255, 255, 0.62);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 700;
+  font-size: 8px;
+}
+
 #settingsButton {
   font-size: 18px;
 }

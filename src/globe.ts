@@ -755,9 +755,11 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
   }
 
   const statusText = document.getElementById("statusText");
+  const pitchNeedle = document.getElementById("pitchNeedle") as SVGLineElement | null;
   const northButton = document.getElementById("northButton");
   const northSvg = northButton?.querySelector("svg");
   let northSvgAngle = 0;
+  let pitchNeedleAngleDeg = 0;
   function resetCameraToNorthUp(): void {
     if (hadPoiSelection || viewer.trackedEntity) {
       viewer.trackedEntity = undefined;
@@ -807,6 +809,18 @@ export async function createGlobe(opts: GlobeOptions = {}): Promise<GlobeHandle>
       delta = ((delta + 180) % 360 + 360) % 360 - 180;
       northSvgAngle = prev + delta;
       northSvg.style.transform = `rotate(${northSvgAngle}deg)`;
+    }
+
+    if (pitchNeedle) {
+      const pitchRad = cameraState?.pitchRad
+        ?? Cesium.Math.clamp(Math.abs(camera.pitch), 0, Cesium.Math.PI_OVER_TWO);
+      const targetAngle = -Cesium.Math.toDegrees(Cesium.Math.clamp(pitchRad, 0, Cesium.Math.PI_OVER_TWO));
+      const prev = pitchNeedleAngleDeg;
+      let delta = targetAngle - prev;
+      // Keep interpolation stable across the -180/180 seam.
+      delta = ((delta + 180) % 360 + 360) % 360 - 180;
+      pitchNeedleAngleDeg = prev + delta;
+      pitchNeedle.style.transform = `rotate(${pitchNeedleAngleDeg}deg)`;
     }
 
     // Update condensed status text
